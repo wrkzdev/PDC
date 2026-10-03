@@ -1,0 +1,10 @@
+# TLS in front of the gateway: Caddy obtains and renews the certificate for NODE_DOMAIN automatically.
+# Wallets then use https://<NODE_DOMAIN> as their remote node.
+{$NODE_DOMAIN} {
+	encode zstd gzip
+	# Caddy adds X-Forwarded-For; the gateway uses it only to rate limit per client and never passes it to pdcd
+	reverse_proxy gateway:8080
+	log {
+		output discard
+	}
+}

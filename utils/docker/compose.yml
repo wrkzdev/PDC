@@ -1,0 +1,68 @@
+# PDC node stack.   docker compose -f utils/docker/compose.yml <profile> up -d --build
+#
+#   (no profile)         full node only. P2P is public, RPC is reachable from this machine only.
+#   --profile gateway    + public-node gateway on 127.0.0.1:8080 (method allowlist, CORS, rate limits)
+#   --profile tls        + Caddy with automatic HTTPS in front of the gateway (needs NODE_DOMAIN)
+#
+# See utils/docker/README.md. Run from the repository root: the build context is the source tree.
+
+name: pdc
+
+services:
+  pdcd:
+    build:
+      context: ../..
+      dockerfile: utils/docker/Dockerfile
+      target: runtime
+    image: pdc-node:local
+    restart: unless-stopped
+    stop_grace_period: 120s       # let the daemon close its database cleanly
+    volumes:
+      - pdc-data:/home/pdc/.PDC
+    ports:
+      - "19121:19121"             # p2p
+      - "127.0.0.1:19211:19211"   # RPC, loopback only: it has no authentication or TLS
+    # Optional extra seeds: put a seed_nodes.txt next to the chain data, see utils/seed_nodes.txt.example
+
+  gateway:
+    profiles: ["gateway", "tls"]
+    build:
+      context: ./gateway
+    image: pdc-gateway:local
+    restart: unless-stopped
+    depends_on:
+      - pdcd
+    environment:
+      PDCD_UPSTREAM: pdcd:19211
+      CORS_ALLOW_ORIGIN: "${CORS_ALLOW_ORIGIN:-*}"   # e.g. https://wallet.example.org
+      RATE_LIGHT: "${RATE_LIGHT:-20}"                # requests/second per client IP, JSON calls
+      RATE_HEAVY: "${RATE_HEAVY:-5}"                 # requests/second per client IP, *.bin (block scanning)
+    ports:
+      - "127.0.0.1:8080:8080"     # plain HTTP, local only: use the tls profile (or your own proxy) to publish it
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+  caddy:
+    profiles: ["tls"]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - gateway
+    environment:
+      NODE_DOMAIN: "${NODE_DOMAIN:?set NODE_DOMAIN to the DNS name that points at this host}"
+    volumes:
+      - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+
+volumes:
+  pdc-data:
+  caddy-data:
+  caddy-config:
