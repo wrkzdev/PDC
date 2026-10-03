@@ -1,0 +1,6 @@
+# Optional extra PDC seed nodes. Copy to <data-dir>/seed_nodes.txt (next to p2pstate.bin).
+# One host:port per line; host may be an IPv4 address or a DNS name. Up to 16 entries.
+# Lines that start with '#' and blank lines are ignored. The node only uses these to find peers.
+#
+# seed1.example.org:19121
+# 203.0.113.7:19121

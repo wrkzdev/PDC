@@ -185,6 +185,7 @@ namespace nodetool
     //-----------------------------------------------------------------------------------------------
     bool parse_peer_from_string(nodetool::net_address& pe, const std::string& node_addr);
     bool handle_command_line(const boost::program_options::variables_map& vm);
+    void load_seed_nodes_from_file();
     bool idle_worker();
     bool handle_remote_peerlist(const std::list<peerlist_entry>& peerlist, time_t local_time, const net_utils::connection_context_base& context);
     bool get_local_node_data(basic_node_data& node_data);

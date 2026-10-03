@@ -13,6 +13,7 @@
 #include "net/net_helper.h"
 #include "math_helper.h"
 #include "p2p_protocol_defs.h"
+#include "seed_nodes_file.h"
 #include "net_peerlist_boost_serialization.h"
 #include "net/local_ip.h"
 #include "crypto/crypto.h"
@@ -312,6 +313,43 @@ namespace nodetool
       append_net_address(m_priority_peers, host, port); \
     } while (0)
   //-----------------------------------------------------------------------------------
+  // Extra seeds from <data-dir>/seed_nodes.txt, treated the same way as the hardcoded seed:
+  // used to fetch a peerlist and also kept as priority peers. Never fatal.
+  template<class t_payload_net_handler>
+  void node_server<t_payload_net_handler>::load_seed_nodes_from_file()
+  {
+    const std::string path = m_config_folder + "/" + P2P_SEED_NODES_FILENAME;
+    seed_nodes_parse_result parsed;
+    if (!load_seed_nodes_file(path, parsed))
+      return;
+
+    for (const std::string& bad : parsed.rejected)
+      LOG_PRINT_YELLOW(path << ": skipped invalid line '" << bad << "'", LOG_LEVEL_0);
+
+    size_t added = 0;
+    for (const std::string& entry : parsed.entries)
+    {
+      std::vector<net_address> resolved;
+      if (!append_net_address(resolved, entry))
+      {
+        LOG_PRINT_YELLOW(path << ": failed to resolve '" << entry << "', skipped", LOG_LEVEL_0);
+        continue;
+      }
+      for (const net_address& na : resolved)
+      {
+        bool known = false;
+        for (const net_address& s : m_seed_nodes)
+          known = known || (s.ip == na.ip && s.port == na.port);
+        if (known)
+          continue;
+        m_seed_nodes.push_back(na);
+        m_priority_peers.push_back(na);
+        ++added;
+      }
+    }
+    LOG_PRINT_L0("Seed nodes from " << path << ": " << parsed.entries.size() << " entries, " << added << " new addresses");
+  }
+  //-----------------------------------------------------------------------------------
   template<class t_payload_net_handler>
   bool node_server<t_payload_net_handler>::init(const boost::program_options::variables_map& vm)
   {
@@ -324,6 +362,8 @@ namespace nodetool
     bool res = handle_command_line(vm);
     CHECK_AND_ASSERT_MES(res, false, "Failed to handle command line");
     m_config_folder = command_line::get_arg(vm, command_line::arg_data_dir);
+
+    load_seed_nodes_from_file();
 
     res = init_config();
     CHECK_AND_ASSERT_MES(res, false, "Failed to init config.");
