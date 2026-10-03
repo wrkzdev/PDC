@@ -1,3 +1,19 @@
+# PDC (PrivacyDataCoin)
+
+PDC is a privacy coin built on the Zano codebase: confidential transactions (Zarcanum), confidential assets, aliases,
+and hybrid consensus with proof-of-work (RandomARQ, a RandomX derivative) and proof-of-stake. Blocks target 120 s for
+each of PoW and PoS, the block reward is 1 PDC (12 decimals), no premine is configured (`PREMINE_AMOUNT` is 0), and addresses start with `Px`.
+
+| | mainnet | testnet build (`-D TESTNET=TRUE`) |
+|---|---|---|
+| P2P | 19121 | 19311 |
+| daemon RPC | 19211 | 19111 |
+| stratum | 19777 | 19888 |
+
+Binaries: `pdcd` (node), `simplewallet` (wallet and wallet RPC server), `connectivity_tool`, and `Pdc` (Qt GUI).
+Docker images, a public-node gateway and a test suite are described in [utils/docker/README.md](utils/docker/README.md).
+To report a vulnerability see [SECURITY.md](SECURITY.md).
+
 ## Cloning
 
 Be sure to clone the repository properly:\
@@ -49,7 +65,7 @@ Recommended OS versions: Ubuntu 20.04, 22.04 LTS.
 3. Download and build Boost\
     (Assuming you have cloned PDC into the 'pdc' folder. If you used a different location for PDC, **edit line 4** accordingly.)
 
-       curl -OL https://boostorg.jfrog.io/artifactory/main/release/1.84.0/source/boost_1_84_0.tar.bz2
+       curl -OL https://archives.boost.io/release/1.84.0/source/boost_1_84_0.tar.bz2
        echo "cc4b893acf645c9d4b698e9a0f08ca8846aa5d6c68275c14c3e7949c24109454  boost_1_84_0.tar.bz2" | shasum -c && tar -xjf boost_1_84_0.tar.bz2
        rm boost_1_84_0.tar.bz2 && cd boost_1_84_0
        ./bootstrap.sh --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,atomic,program_options,locale,timer,log
@@ -102,7 +118,7 @@ For instance, by adding the following lines to `~/.bashrc`
    1. If you skipped step 6 and did not set the environment variables:
 
           cd pdc && mkdir build && cd build
-          BOOST_ROOT=$HOME/boost_1_70_0 OPENSSL_ROOT_DIR=$HOME/openssl cmake ..
+          BOOST_ROOT=$HOME/boost_1_84_0 OPENSSL_ROOT_DIR=$HOME/openssl cmake ..
           make -j1 daemon simplewallet
 
    2. If you set the variables in step 6:
@@ -163,7 +179,34 @@ To build GUI application:
     g. Double click the certificate you've just added, enter the trust section and under "When using this certificate" select "Always trust".\
     h. Unfold the certificate in Keychain Access window and double click the underlying private key "Pdc". Select "Access Control" tab, then select "Allow all applications to access this item". Click "Save Changes".
 2. Revise building script, comment out unwanted steps and run it:  `utils/build_script_mac_osx.sh`
-3. The application should be here: `/buid_mac_osx_64/release/src`
+3. The application should be here: `/build_mac_osx_64/release/src`
+
+## Running
+
+    ./pdcd                                  # node; chain data in ~/.PDC unless --data-dir is given
+    ./simplewallet --generate-new-wallet=my.wallet --daemon-address=127.0.0.1:19211
+
+A node needs peers to sync. It tries a built-in seed first; add more with `--seed-node=host:port` (repeatable) or a
+`seed_nodes.txt` in the data directory (see `utils/seed_nodes.txt.example`).
+
+**The daemon RPC (`19211`) has no authentication or TLS and exposes node-control calls. It binds to `127.0.0.1` by
+default; do not expose it to other machines. To serve wallets from a remote host use the gateway in
+`utils/docker/gateway` (method allowlist, CORS, rate limits; TLS via Caddy).**
+
+### Wallet RPC
+
+    ./simplewallet --wallet-file=my.wallet --password=... --rpc-bind-port=19212 --jwt-secret=<long random string>                    --daemon-address=<node host>:19211
+
+`--rpc-bind-ip` defaults to `127.0.0.1`. With `--jwt-secret` every request must carry a signed JWT in the
+`Pdc-Access-Token` header. Besides transfers, the wallet RPC can deploy and manage confidential assets:
+`deploy_asset`, `emit_asset`, `update_asset`, `burn_asset` (asset operations pay the normal fee and need at least one
+confidential output; tickers are 1-14 alphanumeric characters).
+
+### Remote node
+
+Wallets do not need a local chain: point `--daemon-address` (or the GUI's `--remote-node`) at a node you trust. The
+wallet's node client speaks plain HTTP, so for a node on another host terminate TLS with the gateway's Caddy profile or
+your own reverse proxy. A remote node learns which blocks and outputs your wallet requests, so prefer your own node.
 
 <br />
 <br />
