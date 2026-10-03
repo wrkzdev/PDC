@@ -115,6 +115,19 @@ RUN --mount=type=cache,target=/root/.ccache \
     strip src/pdcd src/simplewallet src/connectivity_tool
 
 ###########################################################################################
+# Remote-only wallet library for the Flutter wallet (docker build --target walletlib-artifacts -o out .)
+# Same remote-only configuration as the mobile wallets, as a shared library with a C ABI; the build then runs
+# src/wallet_core_lib/smoke_test.c against the real engine (creates a wallet offline, asks for its address).
+###########################################################################################
+FROM source AS walletlib
+
+ARG JOBS=0
+RUN --mount=type=cache,target=/root/.ccache     set -eux;     mkdir -p /build/walletlib && cd /build/walletlib;     cmake -D BOOST_ROOT=/opt/boost -D OPENSSL_ROOT_DIR=/opt/openssl           -D BUILD_WALLET_CORE_LIB=ON -D BUILD_GUI=OFF -D CMAKE_BUILD_TYPE=Release -D BUILD_TESTS=OFF           -D CMAKE_C_COMPILER_LAUNCHER=ccache -D CMAKE_CXX_COMPILER_LAUNCHER=ccache           /src;     make -j"$([ "${JOBS}" -gt 0 ] && echo "${JOBS}" || nproc)" pdc_wallet_core;     LIB="$(find /build/walletlib -name 'libpdc_wallet_core.so' | head -n1)";     test -n "$LIB";     strip --strip-unneeded "$LIB";     cp "$LIB" /build/libpdc_wallet_core.so;     gcc -O1 -Wall -o /build/smoke_test /src/src/wallet_core_lib/smoke_test.c -ldl;     mkdir -p /tmp/pdcw && /build/smoke_test /build/libpdc_wallet_core.so /tmp/pdcw
+
+FROM scratch AS walletlib-artifacts
+COPY --from=walletlib /build/libpdc_wallet_core.so /
+
+###########################################################################################
 # Unit tests (docker build --target tests): fails the build if a test fails
 ###########################################################################################
 FROM source AS tests

@@ -1,4 +1,4 @@
-// dart:ffi binding of the pdc_wallet_core C ABI (src/wallet/pdc_wallet_core.h). Synchronous and blocking: callers run
+// dart:ffi binding of the pdc_wallet_core C ABI (src/wallet_core_lib/pdc_wallet_core.h). Synchronous and blocking: callers run
 // it off the UI isolate (see NativeRawWalletApi). Every string the library returns is copied and released with
 // pdc_wallet_free().
 

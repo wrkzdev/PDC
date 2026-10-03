@@ -11,7 +11,7 @@ class FakeRawApi implements RawWalletApi {
   final calls = <String>[];
   final invoked = <Map<String, Object?>>[];
   final Map<String, String Function(Map<String, Object?> params)> rpc = {};
-  String initReply = 'OK';
+  String initReply = '{"id":0,"jsonrpc":"","result":{"return_code":"OK"}}';
   String generateReply = '{"id":0,"jsonrpc":"2.0","result":{"wallet_id":7,"seed":"one two three","name":"w"}}';
   String openReply = '{"id":0,"jsonrpc":"2.0","result":{"wallet_id":9}}';
   String statusReply = '{"current_wallet_height":50,"current_daemon_height":200,"wallet_state":1}';
@@ -80,8 +80,13 @@ void main() {
       expect(api.calls.single, 'init https://node.example.org:19211 /data');
       api.initReply = '{"error":{"code":"BAD_ARG"}}';
       expect(core.connect(NodeEndpoint('https://x.example.org')), throwsA(isA<WalletException>()));
+      api.initReply = '{"id":0,"jsonrpc":"","result":{"return_code":"BAD_ARG"}}';
+      await expectLater(core.connect(NodeEndpoint('https://x.example.org')),
+          throwsA(isA<WalletException>().having((e) => e.message, 'message', 'BAD_ARG')));
       api.initReply = 'FAIL';
       expect(core.connect(NodeEndpoint('https://x.example.org')), throwsA(isA<WalletException>()));
+      api.initReply = 'OK'; // older engines answer with a bare status word
+      await core.connect(NodeEndpoint('https://x.example.org'));
     });
 
     test('create returns the recovery phrase', () async {

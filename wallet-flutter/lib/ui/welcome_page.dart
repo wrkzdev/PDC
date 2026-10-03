@@ -105,7 +105,7 @@ class _WelcomePageState extends State<WelcomePage> {
                             controller: _seed,
                             minLines: 2,
                             maxLines: 4,
-                            decoration: const InputDecoration(labelText: 'Recovery phrase (24 words)'),
+                            decoration: const InputDecoration(labelText: 'Recovery phrase'),
                           ),
                         ],
                         const SizedBox(height: 12),
@@ -160,7 +160,7 @@ class _SeedDialogState extends State<_SeedDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('These 24 words are the only way to recover your funds. Anyone who has them can spend your coins. '
+          const Text('These words are the only way to recover your funds. Anyone who has them can spend your coins. '
               'Store them offline; never share or photograph them.'),
           const SizedBox(height: 12),
           SelectableText(widget.seed, style: const TextStyle(fontFamily: 'monospace', fontSize: 16)),

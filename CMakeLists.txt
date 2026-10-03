@@ -31,6 +31,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
+# Remote-only wallet as a shared library for the Flutter wallet (dart:ffi): the mobile wallet configuration (no local
+# node, no p2p) built as pdc_wallet_core for the host platform. Use a separate build directory.
+option(BUILD_WALLET_CORE_LIB "Build only the remote-only wallet shared library pdc_wallet_core" OFF)
+if(BUILD_WALLET_CORE_LIB)
+  add_definitions(-DMOBILE_WALLET_BUILD)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS" OR CMAKE_SYSTEM_NAME STREQUAL "Android")
   add_definitions(-DMOBILE_WALLET_BUILD)
   if(CMAKE_SYSTEM_NAME STREQUAL "iOS" )

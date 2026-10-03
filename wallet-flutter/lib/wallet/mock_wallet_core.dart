@@ -26,7 +26,7 @@ class MockWalletCore implements WalletCore {
   @override
   Future<String> createWallet({required String name, required String password}) async {
     _open = true;
-    return List.generate(24, (i) => 'mock${i + 1}').join(' ');
+    return List.generate(26, (i) => 'mock${i + 1}').join(' ');
   }
 
   @override
@@ -36,8 +36,9 @@ class MockWalletCore implements WalletCore {
     required String seedPhrase,
     String seedPassword = '',
   }) async {
-    if (seedPhrase.trim().split(RegExp(r'\s+')).length != 24) {
-      throw WalletException('a recovery phrase has 24 words');
+    final words = seedPhrase.trim().split(RegExp(r'\s+')).length;
+    if (words < 24 || words > 26) {
+      throw WalletException('a recovery phrase has 24 to 26 words');
     }
     _open = true;
   }

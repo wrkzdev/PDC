@@ -27,7 +27,15 @@ class InvokeWalletCore implements WalletCore {
   @override
   Future<void> connect(NodeEndpoint node) async {
     final reply = await _api.init(node.url, workingDir, 0);
-    _throwIfError(reply, allowBareOk: true);
+    final t = reply.trim();
+    if (t == 'OK' || t == '"OK"') return;
+    final decoded = _decode(reply);
+    final err = decoded['error'];
+    if (err != null) throw _errorOf(err);
+    // the real engine answers {"result":{"return_code":"OK"}}
+    final result = decoded['result'];
+    final code = result is Map ? result['return_code'] : null;
+    if (code != null && code != 'OK') throw WalletException('$code');
   }
 
   @override
@@ -260,14 +268,6 @@ class InvokeWalletCore implements WalletCore {
     final result = decoded['result'];
     if (result is! Map<String, Object?>) throw WalletException('engine returned no result');
     return result;
-  }
-
-  static void _throwIfError(String reply, {bool allowBareOk = false}) {
-    final t = reply.trim();
-    if (allowBareOk && (t == 'OK' || t == '"OK"')) return;
-    final decoded = _decode(reply);
-    final err = decoded['error'];
-    if (err != null) throw _errorOf(err);
   }
 
   static Map<String, Object?> _decode(String reply) {

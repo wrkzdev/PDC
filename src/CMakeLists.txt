@@ -149,6 +149,19 @@ endif()
 
 
 
+if(BUILD_WALLET_CORE_LIB)
+  # C ABI over plain_wallet_api (wallet_core_lib/pdc_wallet_core.h). Lives outside wallet/ on purpose: that directory is
+  # globbed into the static wallet library, where the export macros of this file must not apply.
+  add_library(pdc_wallet_core SHARED wallet_core_lib/pdc_wallet_core.cpp wallet_core_lib/pdc_wallet_core.h)
+  target_compile_definitions(pdc_wallet_core PRIVATE PDC_WALLET_CORE_BUILD)
+  add_dependencies(pdc_wallet_core version)
+  target_link_libraries(pdc_wallet_core wallet currency_core crypto common zlibstatic lmdb mdbx randomx ethash
+    ${CMAKE_THREAD_LIBS_INIT} ${Boost_LIBRARIES} OpenSSL::SSL OpenSSL::Crypto)
+  set_target_properties(pdc_wallet_core PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+  message("Building the remote-only wallet library (pdc_wallet_core); no daemon or tools in this configuration")
+  return()
+endif()
+
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   install(TARGETS wallet currency_core crypto common DESTINATION lib)
   message("Generating install for iOS")

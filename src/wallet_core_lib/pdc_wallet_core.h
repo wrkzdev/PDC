@@ -6,8 +6,9 @@
 // A thin, stable wrapper over plain_wallet_api.h: strings in, strings out, no C++ types cross the boundary.
 //
 // Conventions
-//  - Every function returns a NUL-terminated UTF-8 string allocated by the library (never NULL: out-of-memory and
-//    other internal failures come back as a JSON error). Release it with pdc_wallet_free().
+//  - Every function returns a NUL-terminated UTF-8 string allocated by the library. Release it with pdc_wallet_free().
+//    Failures, including C++ exceptions, come back as a JSON error string; NULL is returned only when memory for the
+//    reply itself cannot be allocated, and callers must treat NULL as an error.
 //  - The strings are exactly what plain_wallet_api returns: a bare status word ("OK"), or JSON such as
 //    {"id":0,"jsonrpc":"2.0","result":{...}} / {"error":{"code":"...","message":"..."}}.
 //  - Arguments are borrowed for the duration of the call. NULL is treated as an empty string.

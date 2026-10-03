@@ -108,7 +108,7 @@ abstract class WalletCore {
   /// Connects the engine to a node. Must be called before opening a wallet.
   Future<void> connect(NodeEndpoint node);
 
-  /// Creates a wallet and returns its 24-word recovery phrase for the user to write down.
+  /// Creates a wallet and returns its recovery phrase (26 words from the real engine) for the user to write down.
   Future<String> createWallet({required String name, required String password});
 
   Future<void> restoreWallet({

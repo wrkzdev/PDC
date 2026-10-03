@@ -1,9 +1,9 @@
-/* Stand-in for the real pdc_wallet_core library, implementing the same C ABI (src/wallet/pdc_wallet_core.h) with
+/* Stand-in for the real pdc_wallet_core library, implementing the same C ABI (src/wallet_core_lib/pdc_wallet_core.h) with
  * canned answers. It lets the Dart FFI binding be tested on any machine without building the C++ wallet.
  * It echoes what it received so the test can check string marshalling, handles, and that results are freed. */
 
 #define PDC_WALLET_CORE_BUILD
-#include "../../src/wallet/pdc_wallet_core.h"
+#include "../../src/wallet_core_lib/pdc_wallet_core.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,9 +39,9 @@ char* pdc_wallet_version(void) { return dup_str("stub-1.0"); }
 char* pdc_wallet_init(const char* node_address, const char* working_dir, int32_t log_level)
 {
     (void)log_level;
-    if (node_address && strcmp(node_address, "fail") == 0) return dup_str("{\"error\":{\"code\":\"BAD_ARG\"}}");
+    if (node_address && strcmp(node_address, "fail") == 0) return dup_str("{\"id\":0,\"jsonrpc\":\"\",\"result\":{\"return_code\":\"BAD_ARG\"}}");
     (void)working_dir;
-    return dup_str("OK");
+    return dup_str("{\"id\":0,\"jsonrpc\":\"\",\"result\":{\"return_code\":\"OK\"}}");
 }
 
 char* pdc_wallet_generate(const char* path, const char* password)
