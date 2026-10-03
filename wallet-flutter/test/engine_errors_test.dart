@@ -8,6 +8,7 @@ void main() {
     expect(friendlyEngineError('ALREADY_EXISTS'), contains('already'));
     expect(friendlyEngineError('WALLET_WRONG_ID'), contains('not open'));
     expect(friendlyEngineError('WALLET_RPC_ERROR_CODE_NOT_ENOUGH_MONEY'), contains('0.01 PDC'));
+    expect(friendlyEngineError('-4'), contains('could not build the transaction'));
   });
 
   test('codes embedded in longer messages are recognised', () {

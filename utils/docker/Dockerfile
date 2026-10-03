@@ -213,7 +213,8 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
 
 ENTRYPOINT ["./pdcd"]
 # RPC binds 0.0.0.0 inside the container so a published port reaches it; publish it on 127.0.0.1 only
-CMD ["--data-dir=/home/pdc/.PDC", "--disable-upnp", "--rpc-bind-ip=0.0.0.0", "--log-level=0"]
+# --no-console: the daemon reads commands from stdin and stops when there is none (a detached container has no stdin)
+CMD ["--data-dir=/home/pdc/.PDC", "--no-console", "--disable-upnp", "--rpc-bind-ip=0.0.0.0", "--log-level=0"]
 
 ###########################################################################################
 # End-to-end test pieces (utils/docker/e2e/run.sh): a testnet node on accelerated time, and the runner that drives

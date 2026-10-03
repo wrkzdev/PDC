@@ -10,12 +10,22 @@ import 'raw_wallet_api.dart';
 import 'wallet_core.dart';
 
 class InvokeWalletCore implements WalletCore {
-  InvokeWalletCore(this._api, {required this.workingDir});
+  InvokeWalletCore(
+    this._api, {
+    required this.workingDir,
+    this.busyRetries = 120,
+    this.busyDelay = const Duration(milliseconds: 500),
+  });
 
   final RawWalletApi _api;
 
   /// Directory the engine keeps wallet files in (app data dir on desktop, a virtual FS on the web).
   final String workingDir;
+
+  /// While a wallet does its long refresh (right after it is created, opened or restored) every wallet RPC answers
+  /// BUSY. Calls are retried this many times, [busyDelay] apart (one minute by default) before BUSY is reported.
+  final int busyRetries;
+  final Duration busyDelay;
 
   int? _wallet;
   int _id = 0;
@@ -186,6 +196,13 @@ class InvokeWalletCore implements WalletCore {
   }
 
   @override
+  Future<void> addCustomAsset(AssetId asset) async {
+    final r = await _call('assets_whitelist_add', {'asset_id': asset.hex});
+    final status = r['status'];
+    if (status != 'OK') throw WalletException('${status ?? 'the node does not know this asset'}');
+  }
+
+  @override
   Future<DeployedAsset> deployAsset(AssetDraft draft) async {
     final problems = AssetRules.validate(draft);
     if (problems.isNotEmpty) throw WalletException(problems.first);
@@ -245,7 +262,14 @@ class InvokeWalletCore implements WalletCore {
   Future<Map<String, Object?>> _call(String method, [Map<String, Object?> params = const {}]) async {
     final w = _requireWallet();
     final request = encodeJsonExact({'jsonrpc': '2.0', 'id': _id++, 'method': method, 'params': params});
-    return _result(await _api.invoke(w, request));
+    for (var attempt = 0;; attempt++) {
+      try {
+        return _result(await _api.invoke(w, request));
+      } on WalletException catch (e) {
+        if (e.message != 'BUSY' || attempt >= busyRetries) rethrow;
+        await Future<void>.delayed(busyDelay);
+      }
+    }
   }
 
   static String _txIdOf(Map<String, Object?> r) {

@@ -139,6 +139,12 @@ class MockWalletCore implements WalletCore {
   }
 
   @override
+  Future<void> addCustomAsset(AssetId asset) async {
+    _requireOpen();
+    if (!_assets.containsKey(asset.hex)) throw WalletException('NOT_FOUND');
+  }
+
+  @override
   Future<DeployedAsset> deployAsset(AssetDraft draft) async {
     _requireOpen();
     final problems = AssetRules.validate(draft);

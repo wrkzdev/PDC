@@ -111,9 +111,9 @@ least one confidential output, so the wallet needs spendable PDC. Wallets hide a
 |---|---|---|---|
 | 0 | Node hardening, seeds, Docker, CI | unit tests and gateway tests green in CI | done on this branch, CI not yet run (see below) |
 | 1 | Public-node gateway + compose | `utils/docker/gateway/test/run.sh` passes | done |
-| 2 | Native engine: C ABI over `plain_wallet_api`, remote-only library, CMake target, CI build for Windows/Linux/macOS | `pdc_wallet_core` loads from Dart, create/open/getbalance against a testnet node | Linux library built and verified offline (see below); Windows/macOS builds and a testnet run not done |
-| 3 | Flutter desktop app on the real engine | create, restore, receive, send, history on testnet | FFI binding done and tested; opt-in with `--dart-define=PDC_ENGINE=native`; no testnet run yet |
-| 4 | Asset screens on the real engine | deploy, emit, burn on testnet with two wallets | UI done on the demo engine |
+| 2 | Native engine: C ABI over `plain_wallet_api`, remote-only library, CMake target, CI build for Windows/Linux/macOS | `pdc_wallet_core` loads from Dart, create/open/getbalance against a testnet node | Linux library built and verified, including a full run on a local testnet (see below); Windows/macOS builds not done |
+| 3 | Flutter desktop app on the real engine | create, restore, receive, send, history on testnet | FFI binding done and tested; opt-in with `--dart-define=PDC_ENGINE=native`; the app UI itself has not been run on the native engine |
+| 4 | Asset screens on the real engine | deploy, emit, burn on testnet with two wallets | engine calls verified end to end on a local testnet (see below); UI not yet run on the real engine |
 | 5 | Web: engine compiled to WebAssembly (Emscripten), fetch-based `i_core_proxy`, IndexedDB storage, scan checkpoints | create and send from a browser against the gateway | not started; the Dart side already compiles for web |
 | 6 | Mobile (the same engine, `MOBILE_WALLET_BUILD`), signing/packaging, releases with checksums | store builds | not started |
 
@@ -139,8 +139,31 @@ code. With the node address pointing nowhere it confirms:
 - the reply shapes `InvokeWalletCore` parses (`getaddress`, `getbalance`, wallet status, `init`'s `return_code`) are what
   the engine really returns.
 
-Not covered offline, so still open for the testnet run: sync against a node, receiving, a funded send, and the actual
-deploy/emit/burn transactions.
+## Verified end to end on a real chain
+
+`utils/docker/e2e/run.sh` starts a testnet `pdcd` (offline, with its clock accelerated 60x by libfaketime so the 120 s block
+target is a couple of seconds), the production gateway, and a runner that drives the real wallet engine through the
+wallet's Dart code, syncing **through the gateway**. It mines to the wallet, then:
+
+- deploys an asset (`TST`, 4 decimals, 1,000,000 maximum, 1,000 initial): the node reports the exact ticker, name, decimals,
+  maximum and current supply and a non-zero owner, and the asset is in the node's asset list;
+- sends 25.5 TST to a second wallet, which only lists it after `addCustomAsset` (the engine hides assets that are not
+  whitelisted or owned) and then shows exactly 25.5;
+- emits 500 more (node supply 1,500), burns 100 (node supply 1,400); the maximum is unchanged;
+- refuses an invalid ticker client-side, and a non-owner emitting.
+
+What running it against a real chain found and fixed:
+
+- the wallet engine sends JSON-RPC as `GET` with a body; the gateway rejected that (405) and now accepts GET and POST;
+- every wallet call answers `BUSY` during a new wallet's first refresh; the adapter now retries with a bounded backoff;
+- received assets are invisible until added by id, and the whitelist is reset on restore: the app has "add asset by id" and
+  must remember the ids (not done yet) to re-add them after a restore;
+- the daemon stops itself when its stdin closes; the image now starts with `--no-console` (the compose file needed this);
+- confidential transactions need 15 decoy outputs, so a very young chain refuses them with engine error `-4`; the app
+  explains it and the harness waits for chain height.
+
+Still open: the Flutter UI running on the native engine, restore-and-rescan timing on a long chain, and the same flow on
+Windows and macOS builds of the library.
 
 ## What is built on this branch
 

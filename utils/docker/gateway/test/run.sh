@@ -69,7 +69,10 @@ check "batch refused" "$(rpc '[{"method":"getinfo"}]')" 400
 check "invalid json refused" "$(rpc 'not json')" 400
 check "missing method refused" "$(rpc '{"params":{}}')" 400
 check "inherited property name refused" "$(rpc '{"method":"constructor"}')" 403
-check "GET /json_rpc refused" "$(code "$URL/json_rpc")" 405
+check "GET /json_rpc without a body refused" "$(code "$URL/json_rpc")" 400
+check "GET /json_rpc with a body works like POST (the wallet engine does this)" "$(curl -s -o /dev/null -w '%{http_code}' -X GET -H 'Content-Type: application/json' --data-binary '{"jsonrpc":"2.0","id":0,"method":"getinfo","params":{}}' "$URL/json_rpc")" 200
+check "GET /json_rpc cannot reach a forbidden method" "$(curl -s -o /dev/null -w '%{http_code}' -X GET --data-binary '{"jsonrpc":"2.0","id":0,"method":"submitblock","params":{}}' "$URL/json_rpc")" 403
+check "PUT /json_rpc refused" "$(code -X PUT --data '{}' "$URL/json_rpc")" 405
 
 echo "== 64-bit values pass through unchanged"
 BIG='{"jsonrpc":"2.0","id":1,"method":"get_asset_info","params":{"amount":18446744073709551615}}'

@@ -66,7 +66,7 @@ void main() {
   setUp(() {
     api = FakeRawApi();
     api.rpc['getaddress'] = (_) => '{"address":"PxADDRESS"}';
-    core = InvokeWalletCore(api, workingDir: '/data');
+    core = InvokeWalletCore(api, workingDir: '/data', busyDelay: Duration.zero, busyRetries: 3);
   });
 
   Future<void> openIt() async {
@@ -159,6 +159,32 @@ void main() {
     });
   });
 
+  group('BUSY while the wallet refreshes', () {
+    test('calls are retried until the wallet answers', () async {
+      var busy = 2;
+      api.rpc['getbalance'] = (_) => '{"balance":0,"unlocked_balance":0,"balances":[]}';
+      final wrapped = _BusyApi(api, () => busy-- > 0);
+      final c = InvokeWalletCore(wrapped, workingDir: '/data', busyDelay: Duration.zero, busyRetries: 3);
+      await c.connect(NodeEndpoint('https://node.example.org'));
+      await c.openWallet(name: 'w', password: 'pw');
+      expect(await c.balances(), isEmpty);
+      expect(wrapped.busyAnswers, 2);
+    });
+
+    test('gives up with BUSY after the retry limit', () async {
+      final c = InvokeWalletCore(_BusyApi(api, () => true), workingDir: '/data', busyDelay: Duration.zero, busyRetries: 3);
+      await c.openWallet(name: 'w', password: 'pw');
+      await expectLater(c.balances(), throwsA(isA<WalletException>().having((e) => e.message, 'message', 'BUSY')));
+    });
+
+    test('other errors are not retried', () async {
+      await openIt();
+      final before = api.invoked.length;
+      await expectLater(core.balances(), throwsA(isA<WalletException>())); // no getbalance handler: method not found
+      expect(api.invoked.length, before + 1);
+    });
+  });
+
   group('transactions', () {
     test('send builds a transfer with exact atomic amounts and the default fee', () async {
       api.rpc['transfer'] = (_) => '{"tx_hash":"deadbeef","tx_size":100}';
@@ -215,6 +241,15 @@ void main() {
       expect(api.invoked.where((r) => r['method'] == 'deploy_asset'), isEmpty);
     });
 
+    test('addCustomAsset whitelists by id and reports an unknown asset', () async {
+      api.rpc['assets_whitelist_add'] = (p) => p['asset_id'] == 'a5beef' ? '{"status":"OK","asset_descriptor":{}}' : '{"status":"NOT_FOUND"}';
+      await openIt();
+      await core.addCustomAsset(const AssetId('a5beef'));
+      expect((api.invoked.last['params'] as Map)['asset_id'], 'a5beef');
+      await expectLater(core.addCustomAsset(const AssetId('ffff')),
+          throwsA(isA<WalletException>().having((e) => e.message, 'message', 'NOT_FOUND')));
+    });
+
     test('emit and burn use the asset id and exact amounts', () async {
       api.rpc['emit_asset'] = (_) => '{"tx_id":"e1"}';
       api.rpc['burn_asset'] = (_) => '{"tx_id":"b1"}';
@@ -230,4 +265,34 @@ void main() {
       expect(core.burnAsset(asset: id, amount: Amount.zero), throwsA(isA<WalletException>()));
     });
   });
+}
+
+/// Answers invoke() with BUSY while [busy] says so, otherwise delegates to [inner].
+class _BusyApi implements RawWalletApi {
+  _BusyApi(this.inner, this.busy);
+  final FakeRawApi inner;
+  final bool Function() busy;
+  int busyAnswers = 0;
+
+  @override
+  Future<String> invoke(int walletId, String jsonRpcRequest) async {
+    if (busy()) {
+      busyAnswers++;
+      return '{"id":0,"jsonrpc":"2.0","error":{"code":-1,"message":"BUSY"}}';
+    }
+    return inner.invoke(walletId, jsonRpcRequest);
+  }
+
+  @override
+  Future<String> init(String nodeAddress, String workingDir, int logLevel) => inner.init(nodeAddress, workingDir, logLevel);
+  @override
+  Future<String> generate(String path, String password) => inner.generate(path, password);
+  @override
+  Future<String> restore(String seed, String path, String password, String seedPassword) => inner.restore(seed, path, password, seedPassword);
+  @override
+  Future<String> open(String path, String password) => inner.open(path, password);
+  @override
+  Future<String> closeWallet(int walletId) => inner.closeWallet(walletId);
+  @override
+  Future<String> getWalletStatus(int walletId) => inner.getWalletStatus(walletId);
 }

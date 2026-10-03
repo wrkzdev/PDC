@@ -139,6 +139,12 @@ abstract class WalletCore {
     String comment = '',
   });
 
+  /// Makes the wallet list an asset it did not deploy, e.g. one someone sent to it. The engine hides every asset that
+  /// is not on its global whitelist, in its local whitelist or owned by the wallet, so a received asset is invisible
+  /// until it is added. The local whitelist lives in the wallet file and is reset when the wallet is restored from its
+  /// phrase, so callers must remember the ids and add them again after a restore. The asset must exist on the network.
+  Future<void> addCustomAsset(AssetId asset);
+
   /// Registers a new asset and emits [AssetDraft.initialSupply] to this wallet. Pays only the normal fee.
   Future<DeployedAsset> deployAsset(AssetDraft draft);
 

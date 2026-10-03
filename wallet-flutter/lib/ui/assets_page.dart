@@ -24,6 +24,11 @@ class AssetsPage extends StatelessWidget {
             Row(
               children: [
                 Expanded(child: Text('Assets', style: Theme.of(context).textTheme.titleLarge)),
+                IconButton(
+                  tooltip: 'Add an asset by id',
+                  onPressed: () => _addById(context),
+                  icon: const Icon(Icons.playlist_add),
+                ),
                 FilledButton.icon(
                   onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => DeployAssetPage(controller: c))),
                   icon: const Icon(Icons.add),
@@ -52,6 +57,38 @@ class AssetsPage extends StatelessWidget {
         );
       },
     );
+  }
+
+  /// Assets someone sent you stay hidden until you add them by id (the wallet engine's whitelist rule).
+  Future<void> _addById(BuildContext context) async {
+    final text = TextEditingController();
+    final id = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add an asset'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Assets other people send you are hidden until you add them. Paste the asset id (64 hex characters). '
+                'Only add assets you recognise: anyone can create an asset with any name.'),
+            TextField(controller: text, autofocus: true, decoration: const InputDecoration(labelText: 'Asset id')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, text.text.trim().toLowerCase()), child: const Text('Add')),
+        ],
+      ),
+    );
+    text.dispose();
+    if (id == null || !context.mounted) return;
+    try {
+      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(id)) throw FormatException('An asset id is 64 hexadecimal characters.');
+      await controller.addCustomAsset(AssetId(id));
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Asset added')));
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(describeError(e))));
+    }
   }
 
   Future<void> _manage(BuildContext context, AssetBalance a, String action) async {

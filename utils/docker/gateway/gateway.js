@@ -39,8 +39,9 @@ function count(haystack, needle) {
 }
 
 function jsonrpc(r) {
-  if (r.method !== 'POST') {
-    deny(r, 405, null, -32600, 'POST required');
+  // The wallet engine's HTTP client (epee) sends its JSON-RPC calls as GET with a body, other clients use POST.
+  if (r.method !== 'POST' && r.method !== 'GET') {
+    deny(r, 405, null, -32600, 'POST or GET required');
     return;
   }
 

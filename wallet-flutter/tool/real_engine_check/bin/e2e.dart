@@ -23,7 +23,7 @@ import '../../../lib/wallet/wallet_core.dart';
 int failures = 0;
 final started = DateTime.now();
 
-void log(String m) => stdout.writeln('[${DateTime.now().difference(started).inSeconds.toString().padLeft(4)}s] $m');
+void log(String m) => stderr.writeln('[${DateTime.now().difference(started).inSeconds.toString().padLeft(4)}s] $m');
 
 void check(String name, bool ok, [Object? detail]) {
   log('${ok ? 'ok  ' : 'FAIL'} $name${detail == null ? '' : ': $detail'}');
@@ -108,7 +108,7 @@ Future<void> main() async {
 
   // Zarcanum (confidential outputs, needed for asset operations) starts after height 100 on testnet, coinbase outputs
   // unlock after 10 blocks, and transfers need a pool of decoy outputs: wait for a comfortable margin.
-  const targetHeight = 150;
+  const targetHeight = 220;
   final h = await waitFor('the chain to reach height $targetHeight', () async {
     final i = await direct.getInfo();
     if (i.height % 10 == 0) log('node height ${i.height}');
@@ -134,7 +134,16 @@ Future<void> main() async {
     totalMaxSupply: AssetRules.parseSupply('1000000', 4),
     initialSupply: AssetRules.parseSupply('1000', 4),
   );
-  final deployed = await core.deployAsset(draft);
+  // A young chain may not have the 15 decoy outputs every confidential transaction must reference yet; the engine then
+  // fails with -4. Retry (visibly) rather than depend on exact timing, but never forever.
+  final deployed = await waitFor('the asset deployment to be accepted', () async {
+    try {
+      return await core.deployAsset(draft);
+    } on WalletException catch (e) {
+      log('deploy not accepted yet (${e.message}); waiting for more blocks');
+      return null;
+    }
+  }, timeout: const Duration(minutes: 4), every: const Duration(seconds: 8));
   log('deploy tx ${deployed.txId}, asset ${deployed.assetId}');
   check('deploy returns a transaction and an asset id', deployed.txId.length == 64 && deployed.assetId.hex.length == 64);
 
@@ -216,6 +225,9 @@ Future<void> main() async {
   // ---- bob sees what alice sent, and cannot emit
   await core.closeWallet();
   await core.openWallet(name: 'bob.wallet', password: 'bob-password-1');
+  // the engine hides assets that are not whitelisted or owned: bob must add the asset before it is listed
+  check('bob does not list the asset before adding it', balanceOf(await core.balances(), asset) == null);
+  await core.addCustomAsset(asset);
   final bobHeld = await waitFor('bob to receive the asset', () async {
     final b = balanceOf(await core.balances(), asset);
     return (b != null && b.total.atomic == BigInt.from(255000)) ? b : null;

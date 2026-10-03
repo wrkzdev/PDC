@@ -19,6 +19,7 @@ services:
       target: node-e2e
     command:
       - --data-dir=/home/pdc/.PDC
+      - --no-console
       - --disable-upnp
       - --rpc-bind-ip=0.0.0.0
       - --offline-mode

@@ -88,6 +88,11 @@ class WalletController extends ChangeNotifier {
         return tx;
       });
 
+  Future<void> addCustomAsset(AssetId asset) => _guard(() async {
+        await core.addCustomAsset(asset);
+        await _refresh();
+      });
+
   Future<DeployedAsset> deployAsset(AssetDraft draft) => _guard(() async {
         final r = await core.deployAsset(draft);
         await _refresh();
