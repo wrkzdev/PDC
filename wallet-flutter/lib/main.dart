@@ -3,12 +3,39 @@ import 'package:flutter/material.dart';
 import 'app/wallet_controller.dart';
 import 'ui/home_page.dart';
 import 'ui/welcome_page.dart';
-import 'wallet/mock_wallet_core.dart';
+import 'wallet/engine_choice.dart';
+import 'wallet/engine_factory.dart';
 
 void main() {
-  // The native engine (wallet2 behind plain_wallet_api, over dart:ffi / WebAssembly) replaces this in the next
-  // phase; until then the app runs on the in-memory demo engine and says so on every screen.
-  runApp(PdcWalletApp(controller: WalletController(MockWalletCore(), isDemoEngine: true)));
+  final EngineChoice engine;
+  try {
+    engine = createEngine(requestedEngine);
+  } catch (e) {
+    // Never fall back to the demo engine silently when something else was asked for.
+    runApp(StartupErrorApp(message: e.toString()));
+    return;
+  }
+  runApp(PdcWalletApp(controller: WalletController(engine.core, isDemoEngine: engine.isDemo)));
+}
+
+class StartupErrorApp extends StatelessWidget {
+  const StartupErrorApp({super.key, required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: SelectableText('PDC Wallet could not start.\n\n$message'),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class PdcWalletApp extends StatelessWidget {
