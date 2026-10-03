@@ -1,5 +1,7 @@
 # PDC with Docker
 
+All platforms and build types, including cross-compiling, are covered in [../../docs/BUILDING.md](../../docs/BUILDING.md).
+
 Everything here builds the source tree you are standing in, so a branch can be tested exactly as it is.
 Clone with submodules first (`git clone --recursive`, or `git submodule update --init --recursive`).
 
@@ -72,3 +74,14 @@ utils/docker/gateway/test/run.sh
 
 Starts a mock daemon and the gateway in Docker and checks the allowlist, binary integrity, CORS, privacy headers and
 rate limiting end to end (needs `docker` and `curl`).
+
+### End-to-end test of the wallet on a real chain
+
+```
+utils/docker/e2e/run.sh
+```
+
+Starts a testnet node (offline, clock accelerated 60x so blocks take a couple of seconds), the gateway, and a runner that drives
+the real wallet engine through the Flutter wallet's Dart code: mine to a wallet, deploy an asset, send it, emit, burn, add it
+in a second wallet, and check the node's view after each step. The first run builds everything (tens of minutes); it needs
+about 20 GB of Docker disk.

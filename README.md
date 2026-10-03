@@ -12,6 +12,8 @@ each of PoW and PoS, the block reward is 1 PDC (12 decimals), no premine is conf
 
 Binaries: `pdcd` (node), `simplewallet` (wallet and wallet RPC server), `connectivity_tool`, and `Pdc` (Qt GUI).
 Docker images, a public-node gateway and a test suite are described in [utils/docker/README.md](utils/docker/README.md).
+Every build type and how far each has been verified: [docs/BUILDING.md](docs/BUILDING.md). The Flutter desktop and web wallet:
+[wallet-flutter](wallet-flutter/README.md) and [docs/wallet/PLAN.md](docs/wallet/PLAN.md).
 To report a vulnerability see [SECURITY.md](SECURITY.md).
 
 ## Cloning
