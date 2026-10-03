@@ -2189,8 +2189,19 @@ bool blockchain_storage::pre_validate_relayed_block(block& bl, block_verificatio
     bvc.m_verification_failed = false;
     return true;
   }
-  //check proof of work
   bool is_pos_bl = is_pos_block(bl);
+
+  // Same light check that handle_block_to_main_chain() runs before any heavy validation (it rejects the block anyway).
+  // Without it the coinbase height, which picks the RandomARQ epoch and thus the cache, is attacker-controlled
+  // and each crafted height would force a cache initialization before the block is rejected.
+  if (!prevalidate_miner_transaction(bl, m_db_blocks.size(), is_pos_bl))
+  {
+    LOG_PRINT_RED_L0("Relayed block " << id << " has invalid miner transaction, rejected before PoW check");
+    bvc.m_verification_failed = true;
+    return false;
+  }
+
+  //check proof of work
   wide_difficulty_type current_diffic = get_next_diff_conditional(is_pos_bl);
   CHECK_AND_ASSERT_MES_CUSTOM(current_diffic, false, bvc.m_verification_failed = true, "!!!!!!!!! difficulty overhead !!!!!!!!!");
   crypto::hash proof_hash = AUTO_VAL_INIT(proof_hash);

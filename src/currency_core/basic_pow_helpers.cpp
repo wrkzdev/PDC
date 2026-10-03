@@ -15,6 +15,7 @@ using namespace epee;
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
 #include "common/int-util.h"
+#include "pow_epoch_cache.h"
 
 #include <cstring>
 #include <mutex>
@@ -25,19 +26,64 @@ namespace currency
 {
   namespace
   {
+    // Thin adapter over the RandomARQ C API, see pow_epoch_cache.h
+    struct real_randomx_api
+    {
+      typedef randomx_cache cache_t;
+      typedef randomx_dataset dataset_t;
+      typedef crypto::hash seed_t;
+      typedef randomx_flags flags_t;
+
+      static randomx_cache* alloc_cache(randomx_flags flags)
+      {
+        randomx_cache* c = randomx_alloc_cache(flags);
+        if (!c && (flags & RANDOMX_FLAG_JIT))
+          LOG_PRINT_YELLOW("RandomARQ: JIT cache alloc failed, falling back to interpreter", LOG_LEVEL_0);
+        return c;
+      }
+      static void init_cache(randomx_cache* c, const crypto::hash& seed)
+      {
+        randomx_init_cache(c, &seed, sizeof(seed));
+        LOG_PRINT_L0("RandomARQ: epoch cache initialized, seed " << seed);
+      }
+      static void release_cache(randomx_cache* c)
+      {
+        randomx_release_cache(c);
+        LOG_PRINT_L0("RandomARQ: epoch cache released");
+      }
+      static randomx_dataset* alloc_dataset(randomx_flags flags)
+      {
+        LOG_PRINT_YELLOW("RandomARQ: allocating full dataset for CPU mining (approx. 2 GiB)...", LOG_LEVEL_0);
+        randomx_dataset* d = randomx_alloc_dataset(flags);
+        if (!d)
+          LOG_PRINT_RED("RandomARQ: dataset allocation failed, staying on light mode", LOG_LEVEL_0);
+        return d;
+      }
+      static void init_dataset(randomx_dataset* d, randomx_cache* c)
+      {
+        randomx_init_dataset(d, c, 0, randomx_dataset_item_count());
+        LOG_PRINT_GREEN("RandomARQ: full dataset ready", LOG_LEVEL_0);
+      }
+      static void release_dataset(randomx_dataset* d)
+      {
+        randomx_release_dataset(d);
+        LOG_PRINT_L0("RandomARQ: full dataset released");
+      }
+      static bool has_jit(randomx_flags flags)
+      {
+        return (flags & RANDOMX_FLAG_JIT) != 0;
+      }
+      static randomx_flags without_jit(randomx_flags flags)
+      {
+        return static_cast<randomx_flags>(flags & ~(RANDOMX_FLAG_JIT | RANDOMX_FLAG_SECURE));
+      }
+    };
+
+    typedef pow_epoch_cache<real_randomx_api> rx_epoch_cache_t;
+
     std::mutex g_rx_mutex;
-    randomx_flags g_rx_flags = RANDOMX_FLAG_DEFAULT;
-    randomx_cache* g_rx_cache = nullptr;
-    randomx_dataset* g_rx_dataset = nullptr;
-    int g_rx_epoch = -1;
     bool g_rx_mining_mode = false;
     bool g_rx_self_checked = false;
-    std::vector<randomx_cache*> g_rx_old_caches;
-    std::vector<randomx_dataset*> g_rx_old_datasets;
-
-    thread_local randomx_vm* tls_rx_vm = nullptr;
-    thread_local int tls_rx_epoch = -1;
-    thread_local bool tls_rx_full = false;
 
     randomx_flags select_rx_flags()
     {
@@ -46,10 +92,40 @@ namespace currency
       // RandomARQ's A64 JIT emits into RWX pages without MAP_JIT. On Apple
       // Silicon that leaves a null/non-executable code buffer: the same block
       // hashes to two different PoW values, then JitCompilerA64 SIGSEGVs.
-      flags = static_cast<randomx_flags>(flags & ~(RANDOMX_FLAG_JIT | RANDOMX_FLAG_SECURE));
+      flags = real_randomx_api::without_jit(flags);
 #endif
       return flags;
     }
+
+    // must be called with g_rx_mutex held
+    rx_epoch_cache_t& rx_cache_locked()
+    {
+      // intentionally never destroyed: releasing caches from a static destructor
+      // would log after the logger is gone, and the OS reclaims it at exit anyway
+      static rx_epoch_cache_t* cache = new rx_epoch_cache_t(select_rx_flags());
+      return *cache;
+    }
+
+    // Per-thread VM. It co-owns the cache/dataset it was built on, so an epoch
+    // switch on another thread can't free them under a running hash, and they
+    // are released as soon as the last VM using them is replaced or the thread ends.
+    struct tls_vm_state
+    {
+      randomx_vm* vm = nullptr;
+      rx_epoch_cache_t::handle h;
+
+      void reset()
+      {
+        if (vm)
+        {
+          randomx_destroy_vm(vm);
+          vm = nullptr;
+        }
+        h = rx_epoch_cache_t::handle();
+      }
+      ~tls_vm_state() { reset(); }
+    };
+    thread_local tls_vm_state tls_rx;
 
     void self_check_vm_locked(randomx_vm* vm)
     {
@@ -62,104 +138,39 @@ namespace currency
       randomx_calculate_hash(vm, probe, sizeof(probe), &second);
       CHECK_AND_ASSERT_THROW_MES(first == second, "RandomARQ is non-deterministic on this CPU; refusing to verify blocks");
       g_rx_self_checked = true;
-      LOG_PRINT_GREEN("RandomARQ self-check OK (flags=" << static_cast<unsigned>(g_rx_flags) << ")", LOG_LEVEL_0);
+      LOG_PRINT_GREEN("RandomARQ self-check OK (flags=" << static_cast<unsigned>(rx_cache_locked().flags()) << ")", LOG_LEVEL_0);
     }
 
-    void destroy_tls_vm()
+    randomx_vm* create_vm_locked(const rx_epoch_cache_t::handle& h)
     {
-      if (tls_rx_vm)
-      {
-        randomx_destroy_vm(tls_rx_vm);
-        tls_rx_vm = nullptr;
-        tls_rx_epoch = -1;
-        tls_rx_full = false;
-      }
-    }
-
-    bool init_dataset_locked()
-    {
-      if (g_rx_dataset || !g_rx_cache)
-        return g_rx_dataset != nullptr;
-
-      LOG_PRINT_YELLOW("RandomARQ: allocating full dataset for CPU mining (approx. 2 GiB)...", LOG_LEVEL_0);
-      g_rx_dataset = randomx_alloc_dataset(g_rx_flags);
-      if (!g_rx_dataset)
-      {
-        LOG_PRINT_RED("RandomARQ: dataset allocation failed, staying on light mode", LOG_LEVEL_0);
-        return false;
-      }
-
-      const unsigned long item_count = randomx_dataset_item_count();
-      randomx_init_dataset(g_rx_dataset, g_rx_cache, 0, item_count);
-      LOG_PRINT_GREEN("RandomARQ: full dataset ready", LOG_LEVEL_0);
-      return true;
-    }
-
-    void ensure_epoch_locked(int epoch, const crypto::hash& seed)
-    {
-      if (g_rx_epoch == epoch && g_rx_cache)
-      {
-        if (g_rx_mining_mode && !g_rx_dataset)
-          init_dataset_locked();
-        return;
-      }
-
-      if (g_rx_cache)
-        g_rx_old_caches.push_back(g_rx_cache);
-      if (g_rx_dataset)
-      {
-        g_rx_old_datasets.push_back(g_rx_dataset);
-        g_rx_dataset = nullptr;
-      }
-
-      g_rx_flags = select_rx_flags();
-      g_rx_cache = randomx_alloc_cache(g_rx_flags);
-      if (!g_rx_cache && (g_rx_flags & RANDOMX_FLAG_JIT))
-      {
-        LOG_PRINT_YELLOW("RandomARQ: JIT cache alloc failed, falling back to interpreter", LOG_LEVEL_0);
-        g_rx_flags = static_cast<randomx_flags>(g_rx_flags & ~(RANDOMX_FLAG_JIT | RANDOMX_FLAG_SECURE));
-        g_rx_cache = randomx_alloc_cache(g_rx_flags);
-      }
-      CHECK_AND_ASSERT_THROW_MES(g_rx_cache, "RandomARQ: failed to allocate cache");
-      randomx_init_cache(g_rx_cache, &seed, sizeof(seed));
-      g_rx_epoch = epoch;
-
-      if (g_rx_mining_mode)
-        init_dataset_locked();
+      const bool want_full = h.dataset != nullptr;
+      randomx_flags vm_flags = rx_cache_locked().flags();
+      if (want_full)
+        vm_flags = static_cast<randomx_flags>(vm_flags | RANDOMX_FLAG_FULL_MEM);
+      return randomx_create_vm(vm_flags, want_full ? nullptr : h.cache.get(), h.dataset.get());
     }
 
     randomx_vm* ensure_vm_locked(int epoch, const crypto::hash& seed)
     {
-      ensure_epoch_locked(epoch, seed);
-      const bool want_full = g_rx_dataset != nullptr;
-      if (tls_rx_vm && tls_rx_epoch == epoch && tls_rx_full == want_full)
-        return tls_rx_vm;
+      rx_epoch_cache_t& caches = rx_cache_locked();
+      rx_epoch_cache_t::handle h = caches.acquire(epoch, seed, g_rx_mining_mode);
+      if (tls_rx.vm && tls_rx.h == h)
+        return tls_rx.vm;
 
-      destroy_tls_vm();
-      randomx_flags vm_flags = g_rx_flags;
-      if (want_full)
-        vm_flags = static_cast<randomx_flags>(vm_flags | RANDOMX_FLAG_FULL_MEM);
-
-      tls_rx_vm = randomx_create_vm(vm_flags, want_full ? nullptr : g_rx_cache, g_rx_dataset);
-      if (!tls_rx_vm && (vm_flags & RANDOMX_FLAG_JIT))
+      tls_rx.reset();
+      randomx_vm* vm = create_vm_locked(h);
+      if (!vm && real_randomx_api::has_jit(caches.flags()))
       {
         LOG_PRINT_YELLOW("RandomARQ: JIT VM failed, recreating cache without JIT", LOG_LEVEL_0);
-        if (g_rx_cache)
-          g_rx_old_caches.push_back(g_rx_cache);
-        g_rx_flags = static_cast<randomx_flags>(g_rx_flags & ~(RANDOMX_FLAG_JIT | RANDOMX_FLAG_SECURE));
-        g_rx_cache = randomx_alloc_cache(g_rx_flags);
-        CHECK_AND_ASSERT_THROW_MES(g_rx_cache, "RandomARQ: failed to allocate interpreter cache");
-        randomx_init_cache(g_rx_cache, &seed, sizeof(seed));
-        vm_flags = g_rx_flags;
-        if (want_full)
-          vm_flags = static_cast<randomx_flags>(vm_flags | RANDOMX_FLAG_FULL_MEM);
-        tls_rx_vm = randomx_create_vm(vm_flags, want_full ? nullptr : g_rx_cache, g_rx_dataset);
+        caches.reset_without_jit();
+        h = caches.acquire(epoch, seed, g_rx_mining_mode);
+        vm = create_vm_locked(h);
       }
-      CHECK_AND_ASSERT_THROW_MES(tls_rx_vm, "RandomARQ: failed to create VM");
-      tls_rx_epoch = epoch;
-      tls_rx_full = want_full;
-      self_check_vm_locked(tls_rx_vm);
-      return tls_rx_vm;
+      CHECK_AND_ASSERT_THROW_MES(vm, "RandomARQ: failed to create VM");
+      tls_rx.vm = vm;
+      tls_rx.h = h;
+      self_check_vm_locked(vm);
+      return vm;
     }
   }
 
@@ -192,11 +203,10 @@ namespace currency
   {
     std::lock_guard<std::mutex> lock(g_rx_mutex);
     g_rx_mining_mode = enable_full_dataset;
-    if (!enable_full_dataset && g_rx_dataset)
+    if (!enable_full_dataset)
     {
-      g_rx_old_datasets.push_back(g_rx_dataset);
-      g_rx_dataset = nullptr;
-      destroy_tls_vm();
+      rx_cache_locked().drop_all_datasets();
+      tls_rx.reset();
     }
   }
 
