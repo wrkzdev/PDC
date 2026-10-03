@@ -46,6 +46,7 @@ void main() {
     test('calls every function and releases results', () {
       final b = PdcWalletBindings(DynamicLibrary.open(stub!));
       expect(b.version(), 'stub-1.0');
+      expect(b.shutdown(), contains('OK'));
       expect(b.init('https://node.example.org:19211', 'wd', 0), contains('"return_code":"OK"'));
       expect(b.init('fail', 'wd', 0), contains('BAD_ARG'));
       expect(b.close(5), 'closed 5');

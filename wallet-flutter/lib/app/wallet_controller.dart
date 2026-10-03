@@ -59,6 +59,9 @@ class WalletController extends ChangeNotifier {
         await _afterOpen();
       });
 
+  /// Called when the application is about to exit.
+  Future<void> shutdown() => core.shutdown();
+
   Future<void> lock() async {
     await core.closeWallet();
     isOpen = false;

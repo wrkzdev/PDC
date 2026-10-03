@@ -55,7 +55,9 @@ int main(int argc, char** argv)
     invoke_fn invoke = (invoke_fn)sym(lib, "pdc_wallet_invoke");
     free_fn release = (free_fn)sym(lib, "pdc_wallet_free");
 
-    check(abi() == 1, "abi version is 1", NULL);
+    str0_fn shutdown_fn = (str0_fn)sym(lib, "pdc_wallet_shutdown");
+
+    check(abi() == 2, "abi version is 2", NULL);
 
     char* v = version();
     check(v && v[0], "version string", v);
@@ -116,6 +118,18 @@ int main(int argc, char** argv)
 
     r = invoke(0, NULL);
     check(r != NULL, "NULL request is tolerated", r);
+    release(r);
+
+    r = shutdown_fn();
+    check(r && strstr(r, "OK"), "shutdown stops the engine", r);
+    release(r);
+
+    /* the engine can be started again after a shutdown */
+    r = init("http://127.0.0.1:1", argv[2], 0);
+    check(r != NULL, "init works again after shutdown", r);
+    release(r);
+    r = shutdown_fn();
+    check(r && strstr(r, "OK"), "second shutdown", r);
     release(r);
 
     printf(failures ? "SMOKE TEST FAILED (%d)\n" : "SMOKE TEST PASSED\n", failures);

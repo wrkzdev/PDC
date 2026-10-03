@@ -121,6 +121,10 @@ abstract class WalletCore {
   Future<void> openWallet({required String name, required String password});
   Future<void> closeWallet();
 
+  /// Closes the wallet and stops the engine. Call it before the application exits (see RawWalletApi.shutdown: on
+  /// Windows a process that exits without it can hang). The core can be connected again afterwards.
+  Future<void> shutdown();
+
   Future<String> address();
 
   /// Balances for the native coin and every known asset.

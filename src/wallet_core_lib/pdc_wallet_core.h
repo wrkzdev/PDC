@@ -22,7 +22,7 @@
 
 #include <stdint.h>
 
-#define PDC_WALLET_CORE_ABI_VERSION 1
+#define PDC_WALLET_CORE_ABI_VERSION 2
 
 #if defined(_WIN32)
 #  if defined(PDC_WALLET_CORE_BUILD)
@@ -56,6 +56,12 @@ PDC_WALLET_API char* pdc_wallet_status(int64_t wallet_id);
 // json_rpc_request: a complete JSON-RPC 2.0 request for the wallet RPC server
 // ({"jsonrpc":"2.0","id":0,"method":"getbalance","params":{}}).
 PDC_WALLET_API char* pdc_wallet_invoke(int64_t wallet_id, const char* json_rpc_request);
+
+// Stops the engine and joins its threads. Call it once before the process exits (and before unloading the library).
+// The library cannot do this safely on its own at exit on Windows: its static destructor runs under the loader lock
+// and waiting for threads there deadlocks, leaving a process that never ends. Afterwards pdc_wallet_init() may be
+// called again. Open wallets are closed without being saved again: close them first if they must be stored.
+PDC_WALLET_API char* pdc_wallet_shutdown(void);
 
 // Releases a string returned by any function above. NULL is allowed.
 PDC_WALLET_API void pdc_wallet_free(char* s);

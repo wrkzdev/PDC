@@ -92,4 +92,6 @@ char* pdc_wallet_invoke(int64_t wallet_id, const char* json_rpc_request)
     return r;
 }
 
+char* pdc_wallet_shutdown(void) { return dup_str("{\"response\": \"OK\"}"); }
+
 void pdc_wallet_free(char* s) { free(s); }

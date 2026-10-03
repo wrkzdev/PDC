@@ -50,6 +50,12 @@ class FakeRawApi implements RawWalletApi {
   Future<String> getWalletStatus(int walletId) async => statusReply;
 
   @override
+  Future<String> shutdown() async {
+    calls.add('shutdown');
+    return '{"response": "OK"}';
+  }
+
+  @override
   Future<String> invoke(int walletId, String jsonRpcRequest) async {
     final req = decodeJsonExact(jsonRpcRequest) as Map<String, Object?>;
     invoked.add(req);
@@ -102,6 +108,14 @@ void main() {
       api.openReply = '{"error":{"code":"WRONG_PASSWORD"}}';
       await expectLater(
           core.openWallet(name: 'w', password: 'bad'), throwsA(isA<WalletException>().having((e) => e.message, 'message', 'WRONG_PASSWORD')));
+    });
+
+    test('shutdown closes the open wallet, then stops the engine', () async {
+      await openIt();
+      await core.shutdown();
+      expect(api.calls.sublist(api.calls.length - 2), ['close 9', 'shutdown']);
+      await core.shutdown(); // idempotent: nothing open, engine stopped again without error
+      expect(api.calls.last, 'shutdown');
     });
 
     test('calls need an open wallet', () async {
@@ -295,4 +309,6 @@ class _BusyApi implements RawWalletApi {
   Future<String> closeWallet(int walletId) => inner.closeWallet(walletId);
   @override
   Future<String> getWalletStatus(int walletId) => inner.getWalletStatus(walletId);
+  @override
+  Future<String> shutdown() => inner.shutdown();
 }

@@ -237,6 +237,7 @@ Future<void> main() async {
   check('a non-owner cannot emit', notOwner != null, notOwner);
   await core.closeWallet();
 
+  await api.shutdown();
   web.close();
   direct.close();
   viaGateway.close();

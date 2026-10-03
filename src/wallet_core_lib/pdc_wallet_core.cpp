@@ -15,6 +15,12 @@
 
 #include "wallet/plain_wallet_api.h"
 
+namespace plain_wallet
+{
+  // defined in plain_wallet_api.cpp (not declared in its header): stops the wallets manager and drops the instance
+  void deinit();
+}
+
 namespace
 {
   char* to_c_string(const std::string& s)
@@ -127,6 +133,11 @@ extern "C"
   char* pdc_wallet_invoke(int64_t wallet_id, const char* json_rpc_request)
   {
     return guarded([&] { return plain_wallet::invoke(wallet_id, safe(json_rpc_request)); });
+  }
+
+  char* pdc_wallet_shutdown(void)
+  {
+    return guarded([] { plain_wallet::deinit(); return std::string("{\"response\": \"OK\"}"); });
   }
 
   void pdc_wallet_free(char* s)

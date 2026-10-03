@@ -48,6 +48,9 @@ class NativeRawWalletApi implements RawWalletApi {
 
   @override
   Future<String> invoke(int walletId, String jsonRpcRequest) => _run((b) => b.invoke(walletId, jsonRpcRequest));
+
+  @override
+  Future<String> shutdown() => _run((b) => b.shutdown());
 }
 
 /// Where the native library is expected, in order: the PDC_WALLET_CORE_LIB environment variable, then next to the

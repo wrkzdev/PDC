@@ -49,6 +49,9 @@ class MockWalletCore implements WalletCore {
   @override
   Future<void> closeWallet() async => _open = false;
 
+  @override
+  Future<void> shutdown() async => _open = false;
+
   void _requireOpen() {
     if (!_open) throw WalletException('no wallet is open');
   }

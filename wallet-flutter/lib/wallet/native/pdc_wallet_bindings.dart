@@ -7,7 +7,7 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 
 /// ABI version this binding was written for; must equal PDC_WALLET_CORE_ABI_VERSION in pdc_wallet_core.h.
-const int expectedWalletCoreAbiVersion = 1;
+const int expectedWalletCoreAbiVersion = 2;
 
 class WalletCoreLibraryException implements Exception {
   WalletCoreLibraryException(this.message);
@@ -41,6 +41,7 @@ class PdcWalletBindings {
         _close = lib.lookupFunction<_IdN, _IdD>('pdc_wallet_close'),
         _status = lib.lookupFunction<_IdN, _IdD>('pdc_wallet_status'),
         _invoke = lib.lookupFunction<_IdStrN, _IdStrD>('pdc_wallet_invoke'),
+        _shutdown = lib.lookupFunction<_Str0N, _Str0D>('pdc_wallet_shutdown'),
         _free = lib.lookupFunction<_FreeN, _FreeD>('pdc_wallet_free') {
     final abi = lib.lookupFunction<Int32 Function(), int Function()>('pdc_wallet_abi_version')();
     if (abi != expectedWalletCoreAbiVersion) {
@@ -57,6 +58,7 @@ class PdcWalletBindings {
   final _IdD _close;
   final _IdD _status;
   final _IdStrD _invoke;
+  final _Str0D _shutdown;
   final _FreeD _free;
 
   String _take(Pointer<Utf8> p) {
@@ -69,6 +71,8 @@ class PdcWalletBindings {
   }
 
   String version() => _take(_version());
+
+  String shutdown() => _take(_shutdown());
 
   String init(String nodeAddress, String workingDir, int logLevel) => using((a) =>
       _take(_init(nodeAddress.toNativeUtf8(allocator: a), workingDir.toNativeUtf8(allocator: a), logLevel)));

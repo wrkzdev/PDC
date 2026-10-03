@@ -1,3 +1,5 @@
+import 'dart:ui' show AppExitResponse;
+
 import 'package:flutter/material.dart';
 
 import 'app/wallet_controller.dart';
@@ -38,10 +40,40 @@ class StartupErrorApp extends StatelessWidget {
   }
 }
 
-class PdcWalletApp extends StatelessWidget {
+class PdcWalletApp extends StatefulWidget {
   const PdcWalletApp({super.key, required this.controller});
 
   final WalletController controller;
+
+  @override
+  State<PdcWalletApp> createState() => _PdcWalletAppState();
+}
+
+class _PdcWalletAppState extends State<PdcWalletApp> {
+  late final AppLifecycleListener _lifecycle;
+
+  WalletController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    // Stop the wallet engine before the process exits: on Windows an engine still running at exit can leave a process that
+    // never ends. Failures must not keep the window from closing.
+    _lifecycle = AppLifecycleListener(onExitRequested: () async {
+      try {
+        await controller.shutdown().timeout(const Duration(seconds: 10));
+      } on Object {
+        // exit anyway
+      }
+      return AppExitResponse.exit;
+    });
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

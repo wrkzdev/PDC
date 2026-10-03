@@ -87,6 +87,16 @@ class InvokeWalletCore implements WalletCore {
   }
 
   @override
+  Future<void> shutdown() async {
+    try {
+      await closeWallet();
+    } on Object {
+      // closing is best effort: the engine is stopped either way
+    }
+    await _api.shutdown();
+  }
+
+  @override
   Future<String> address() async {
     final cached = _cachedAddress;
     if (cached != null) return cached;

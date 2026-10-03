@@ -91,6 +91,7 @@ Future<void> main() async {
   check('burning an unknown asset is an error', burn != null, burn);
 
   await core.closeWallet();
+  await api.shutdown(); // the engine must be stopped before exit, or the process can hang on Windows
   stdout.writeln(failures == 0 ? 'REAL ENGINE CHECK PASSED' : 'REAL ENGINE CHECK FAILED ($failures)');
   exit(failures == 0 ? 0 : 1);
 }

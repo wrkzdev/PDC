@@ -21,4 +21,8 @@ abstract class RawWalletApi {
   /// plain_wallet::invoke: [jsonRpcRequest] is a complete JSON-RPC 2.0 request for the wallet RPC server
   /// (`{"jsonrpc":"2.0","id":0,"method":"getbalance","params":{}}`); the reply is the JSON-RPC response.
   Future<String> invoke(int walletId, String jsonRpcRequest);
+
+  /// Stops the engine and its threads. Must be called before the process exits: on Windows the engine cannot do it from
+  /// its static destructor and a process that exits without it can hang forever.
+  Future<String> shutdown();
 }
