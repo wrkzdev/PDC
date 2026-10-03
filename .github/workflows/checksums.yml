@@ -1,0 +1,64 @@
+name: Release checksums
+
+# Run by hand once all release builds have uploaded their assets:
+#   Actions > Release checksums > Run workflow > tag (e.g. v2.3.0)
+# Publishes SHA256SUMS for every asset on the release and, if the RELEASE_GPG_PRIVATE_KEY secret
+# (ASCII-armored private key, no passphrase) is set, a detached signature SHA256SUMS.asc.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to checksum
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  checksums:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir assets --pattern '*' --clobber
+          cd assets
+          rm -f SHA256SUMS SHA256SUMS.asc
+          ls -l
+
+      - name: Compute SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd assets
+          sha256sum -- * | sort -k2 > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Sign SHA256SUMS
+        env:
+          GPG_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          cd assets
+          if [ -z "${GPG_KEY}" ]; then
+            echo "::warning::RELEASE_GPG_PRIVATE_KEY is not set; publishing SHA256SUMS without a signature"
+            exit 0
+          fi
+          printf '%s' "${GPG_KEY}" | gpg --batch --import
+          gpg --batch --yes --armor --detach-sign SHA256SUMS
+          gpg --verify SHA256SUMS.asc SHA256SUMS
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          cd assets
+          files=(SHA256SUMS)
+          [ -f SHA256SUMS.asc ] && files+=(SHA256SUMS.asc)
+          gh release upload "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber

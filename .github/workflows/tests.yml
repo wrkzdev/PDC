@@ -1,0 +1,46 @@
+name: Tests
+
+# Separate from the release workflows on purpose: it only builds and tests, never publishes anything.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Unit tests (Docker, Ubuntu 22.04)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Builds the daemon libraries and unit_tests inside utils/docker/Dockerfile and runs them;
+      # the build fails if any test fails.
+      - name: Build and run unit tests
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: utils/docker/Dockerfile
+          target: tests
+          push: false
+          cache-from: type=gha,scope=pdc-tests
+          cache-to: type=gha,scope=pdc-tests,mode=max
+
+  gateway:
+    name: Public-node gateway
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # nginx+njs allowlist, CORS, rate limits and binary integrity against a mock daemon
+      - name: Gateway end-to-end test
+        run: bash utils/docker/gateway/test/run.sh

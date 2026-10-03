@@ -120,6 +120,8 @@ RUN --mount=type=cache,target=/root/.ccache \
 FROM source AS tests
 
 ARG JOBS=0
+# narrow the run while triaging, e.g. --build-arg GTEST_FILTER='pow_epoch_cache*:seed_nodes_file*'
+ARG GTEST_FILTER=*
 RUN --mount=type=cache,target=/root/.ccache \
     set -eux; \
     mkdir -p /build/tests && cd /build/tests; \
@@ -128,7 +130,7 @@ RUN --mount=type=cache,target=/root/.ccache \
           -D CMAKE_C_COMPILER_LAUNCHER=ccache -D CMAKE_CXX_COMPILER_LAUNCHER=ccache \
           /src; \
     make -j"$([ "${JOBS}" -gt 0 ] && echo "${JOBS}" || nproc)" unit_tests; \
-    cd tests && ./unit_tests --gtest_color=no
+    cd tests && ./unit_tests --gtest_color=no --gtest_filter="${GTEST_FILTER}"
 
 ###########################################################################################
 # Export only the binaries: docker build --target artifacts -o out .
