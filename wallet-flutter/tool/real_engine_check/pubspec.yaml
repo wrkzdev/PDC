@@ -1,0 +1,9 @@
+name: real_engine_check
+description: Drives the real pdc_wallet_core library through the wallet's Dart code (run by the Docker walletlib-dart-check stage).
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  ffi: ^2.1.3

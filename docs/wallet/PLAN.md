@@ -111,8 +111,8 @@ least one confidential output, so the wallet needs spendable PDC. Wallets hide a
 |---|---|---|---|
 | 0 | Node hardening, seeds, Docker, CI | unit tests and gateway tests green in CI | done on this branch, CI not yet run (see below) |
 | 1 | Public-node gateway + compose | `utils/docker/gateway/test/run.sh` passes | done |
-| 2 | Native engine: C ABI over `plain_wallet_api`, remote-only desktop library, CMake target, CI build for Windows/Linux/macOS | `pdc_wallet_core` loads from Dart, create/open/getbalance against a testnet node | not started |
-| 3 | Flutter desktop app on the real engine | create, restore, receive, send, history on testnet | Dart layer, UI and tests done on the demo engine; FFI binding not started |
+| 2 | Native engine: C ABI over `plain_wallet_api`, remote-only library, CMake target, CI build for Windows/Linux/macOS | `pdc_wallet_core` loads from Dart, create/open/getbalance against a testnet node | Linux library built and verified offline (see below); Windows/macOS builds and a testnet run not done |
+| 3 | Flutter desktop app on the real engine | create, restore, receive, send, history on testnet | FFI binding done and tested; opt-in with `--dart-define=PDC_ENGINE=native`; no testnet run yet |
 | 4 | Asset screens on the real engine | deploy, emit, burn on testnet with two wallets | UI done on the demo engine |
 | 5 | Web: engine compiled to WebAssembly (Emscripten), fetch-based `i_core_proxy`, IndexedDB storage, scan checkpoints | create and send from a browser against the gateway | not started; the Dart side already compiles for web |
 | 6 | Mobile (the same engine, `MOBILE_WALLET_BUILD`), signing/packaging, releases with checksums | store builds | not started |
@@ -121,6 +121,26 @@ Phase 5's hard parts, from reading the sources: wallet2 pulls in Boost (serializ
 and Boost.Asio, which need a WASM-friendly transport (replace the epee HTTP client behind `i_core_proxy` with JS `fetch`),
 an in-memory/IndexedDB file layer, and a build that drops RandomX/ethash (only needed for mining). Expect this phase to
 dominate the schedule; phases 2-4 do not depend on it.
+
+## Verified against the real engine (offline, Linux)
+
+`docker build -f utils/docker/Dockerfile --target walletlib-dart-check .` builds the wallet in its remote-only
+configuration (`-D BUILD_WALLET_CORE_LIB=ON`) as `libpdc_wallet_core.so` with its Boost/OpenSSL libraries bundled and an
+`$ORIGIN` rpath, smoke-tests it through `dlopen` with no library path set, then drives it from the Flutter wallet's own Dart
+code. With the node address pointing nowhere it confirms:
+
+- create a wallet: a 26-word recovery phrase (not 24), a `Px...` address, a zero native balance listed as `PDC` with 12
+  decimals and asset id `d6329b5b...498a`, empty history;
+- close and reopen: same address; wrong password refused (`WRONG_PASSWORD`); opening an open wallet refused
+  (`ALREADY_EXISTS`);
+- restore from the phrase: the same address; an invalid phrase refused (`WRONG_SEED`);
+- spending, deploying an asset or burning an unknown asset without funds fail cleanly with engine codes
+  (`WALLET_RPC_ERROR_CODE_NOT_ENOUGH_MONEY`, ...), which the app maps to plain language;
+- the reply shapes `InvokeWalletCore` parses (`getaddress`, `getbalance`, wallet status, `init`'s `return_code`) are what
+  the engine really returns.
+
+Not covered offline, so still open for the testnet run: sync against a node, receiving, a funded send, and the actual
+deploy/emit/burn transactions.
 
 ## What is built on this branch
 
@@ -132,7 +152,11 @@ dominate the schedule; phases 2-4 do not depend on it.
 
 ## Unverified / to confirm in phase 2
 
-- The exact JSON each `invoke` call returns on a live wallet (the adapter and its tests encode the documented shapes).
+- Replies of the calls that need a synced, funded wallet (`transfer`, `deploy_asset`, `emit_asset`, `burn_asset`, history with
+  entries); the offline calls were checked against the real engine (see above).
 - Whether the whitelist loader verifies `WALLET_ASSETS_WHITELIST_VALIDATION_PUBLIC_KEY`; it appeared not to.
 - WASM feasibility of the full `wallet2` (no prototype yet; the plan isolates it to phase 5).
-- `get_wallet_status` progress semantics: the adapter derives progress from wallet and daemon heights instead.
+- `get_wallet_status` `progress` semantics: the adapter derives progress from wallet and daemon heights instead (the engine
+  reports `progress: 0` and both heights 0 when it has no node).
+- Packaging: the Linux bundle links shared Boost/OpenSSL 1.1.1 next to the library; Windows and macOS builds and a static
+  OpenSSL option are still to do.

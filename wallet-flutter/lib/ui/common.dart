@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app/wallet_controller.dart';
+import '../wallet/engine_errors.dart';
 import '../wallet/wallet_core.dart';
 
 /// Shown at the top of every screen while the demo engine is active.
@@ -26,7 +27,7 @@ class DemoBanner extends StatelessWidget {
 }
 
 String describeError(Object e) {
-  if (e is WalletException) return e.message;
+  if (e is WalletException) return friendlyEngineError(e.message);
   if (e is FormatException) return e.message;
   return e.toString();
 }

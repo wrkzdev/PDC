@@ -14,3 +14,4 @@ utils/docker
 **/*.exe
 **/CMakeCache.txt
 **/CMakeFiles
+**/.dart_tool

@@ -122,10 +122,42 @@ RUN --mount=type=cache,target=/root/.ccache \
 FROM source AS walletlib
 
 ARG JOBS=0
-RUN --mount=type=cache,target=/root/.ccache     set -eux;     mkdir -p /build/walletlib && cd /build/walletlib;     cmake -D BOOST_ROOT=/opt/boost -D OPENSSL_ROOT_DIR=/opt/openssl           -D BUILD_WALLET_CORE_LIB=ON -D BUILD_GUI=OFF -D CMAKE_BUILD_TYPE=Release -D BUILD_TESTS=OFF           -D CMAKE_C_COMPILER_LAUNCHER=ccache -D CMAKE_CXX_COMPILER_LAUNCHER=ccache           /src;     make -j"$([ "${JOBS}" -gt 0 ] && echo "${JOBS}" || nproc)" pdc_wallet_core;     LIB="$(find /build/walletlib -name 'libpdc_wallet_core.so' | head -n1)";     test -n "$LIB";     strip --strip-unneeded "$LIB";     cp "$LIB" /build/libpdc_wallet_core.so;     gcc -O1 -Wall -o /build/smoke_test /src/src/wallet_core_lib/smoke_test.c -ldl;     mkdir -p /tmp/pdcw && /build/smoke_test /build/libpdc_wallet_core.so /tmp/pdcw
+RUN apt-get update && apt-get install -y --no-install-recommends patchelf && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/root/.ccache \
+    set -eux; \
+    mkdir -p /build/walletlib && cd /build/walletlib; \
+    cmake -D BOOST_ROOT=/opt/boost -D OPENSSL_ROOT_DIR=/opt/openssl \
+          -D BUILD_WALLET_CORE_LIB=ON -D BUILD_GUI=OFF -D CMAKE_BUILD_TYPE=Release -D BUILD_TESTS=OFF \
+          -D CMAKE_C_COMPILER_LAUNCHER=ccache -D CMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          /src; \
+    make -j"$([ "${JOBS}" -gt 0 ] && echo "${JOBS}" || nproc)" pdc_wallet_core; \
+    LIB="$(find /build/walletlib -name 'libpdc_wallet_core.so' | head -n1)"; \
+    test -n "$LIB"; \
+    mkdir -p /build/dist; \
+    cp "$LIB" /build/dist/libpdc_wallet_core.so; \
+    for dep in $(ldd "$LIB" | awk '/=> \/opt\//{print $3}'); do cp -L "$dep" /build/dist/; done; \
+    cd /build/dist; \
+    for f in *.so*; do strip --strip-unneeded "$f" || true; patchelf --set-rpath '$ORIGIN' "$f"; done; \
+    ls -l /build/dist; \
+    gcc -O1 -Wall -o /build/smoke_test /src/src/wallet_core_lib/smoke_test.c -ldl; \
+    mkdir -p /tmp/pdcw; \
+    env -u LD_LIBRARY_PATH /build/smoke_test /build/dist/libpdc_wallet_core.so /tmp/pdcw
 
 FROM scratch AS walletlib-artifacts
-COPY --from=walletlib /build/libpdc_wallet_core.so /
+COPY --from=walletlib /build/dist/ /
+
+###########################################################################################
+# The Flutter wallet's Dart code against the real library, offline (docker build --target walletlib-dart-check .)
+# Create, reopen, wrong password, restore from the phrase (same address), and how spending without funds fails.
+###########################################################################################
+FROM dart:stable AS walletlib-dart-check
+
+COPY --from=walletlib /build/dist/ /opt/pdc/
+COPY wallet-flutter/lib /w/lib
+COPY wallet-flutter/tool/real_engine_check /w/tool/real_engine_check
+WORKDIR /w/tool/real_engine_check
+RUN dart pub get
+RUN PDC_WALLET_CORE_LIB=/opt/pdc/libpdc_wallet_core.so dart run bin/check.dart
 
 ###########################################################################################
 # Unit tests (docker build --target tests): fails the build if a test fails
