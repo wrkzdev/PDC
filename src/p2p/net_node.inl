@@ -329,8 +329,10 @@ namespace nodetool
     size_t added = 0;
     for (const std::string& entry : parsed.entries)
     {
+      // entries are already validated as host:port by parse_seed_nodes_text()
+      const size_t colon = entry.find_last_of(':');
       std::vector<net_address> resolved;
-      if (!append_net_address(resolved, entry))
+      if (!append_net_address(resolved, entry.substr(0, colon), std::stoi(entry.substr(colon + 1))))
       {
         LOG_PRINT_YELLOW(path << ": failed to resolve '" << entry << "', skipped", LOG_LEVEL_0);
         continue;
