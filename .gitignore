@@ -9,3 +9,6 @@ Thumbs.db
 .vs/*
 utils/*.SECRET.txt
 *.SECRET*
+
+# artifacts written by docker buildx bake
+/dist/

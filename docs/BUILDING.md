@@ -11,15 +11,16 @@ Every build type, how to produce it, and how much of it has actually been run. S
 
 | Target | Daemon, CLI wallet | Wallet library for Flutter (`pdc_wallet_core`) | Flutter wallet app | Qt GUI |
 |---|---|---|---|---|
-| Linux x86-64 | **Verified here** (Docker), CI | **Verified here**, including an end-to-end run on a testnet | app UI tests only; `PDC_ENGINE=native` not run through the UI | CI (Qt 5.12, AppImage) |
+| Linux x86-64 | **Verified here** (Docker), CI | **Verified here**, including an end-to-end run on a testnet | **builds in Docker** with the library bundled; not run with a display | CI (Qt 5.12, AppImage) |
 | Linux arm64 | Not verified (Docker buildx recipe below) | Not verified | not verified | not built |
-| Windows x64 | CI (MSVC 2022) | not built (needs an MSVC build of the library) | **Verified here** (`flutter build windows`) | CI (MSVC + Qt, Inno Setup installer) |
+| Windows x64 | CI (MSVC 2022), and **cross-compiled from Linux in Docker** (MinGW-w64): **verified here**, `pdcd.exe` runs on Windows | **Verified here**: the cross-compiled `pdc_wallet_core.dll` passes the real-engine check on Windows | **Verified here** (`flutter build windows` on Windows; loads the DLL and closes cleanly) | CI (MSVC + Qt, Inno Setup installer) |
 | macOS (arm64) | CI (`macos-14`) | not built | not built | CI (ad-hoc signed) |
 | Android, iOS | not built | static libraries via the mobile configuration, not verified | platform folders not created yet | n/a |
-| Web | n/a | WebAssembly build **not started** | **Verified here** (`flutter build web`); runs on the demo engine | n/a |
+| Web | n/a | WebAssembly build **not started** | **Verified here** (builds in Docker, `flutter build web`); runs on the demo engine | n/a |
 
-The Linux/Docker path is the reproducible reference. The other platforms are built natively on their own runners; there is
-no supported cross-compiler from Linux to Windows or macOS.
+Docker builds Linux natively and Windows x64 by cross-compiling with MinGW-w64, plus the Flutter web and Linux desktop apps.
+What Docker cannot do: the Flutter Windows and macOS desktop apps (Flutter does not cross-compile them) and anything for
+macOS (Apple's SDK is only licensed for Macs). Those are built natively on their own hosts; the steps are below.
 
 ## Versions that matter
 
@@ -34,6 +35,20 @@ no supported cross-compiler from Linux to Windows or macOS.
 
 ## Docker (reproducible Linux builds)
 
+**One command builds the whole amd64 release set** (Linux node and tools, Windows node, tools and wallet DLL, the wallet library,
+the Flutter web wallet and the Flutter Linux desktop wallet) into `./dist`:
+
+```
+./utils/docker/build-all.sh                  # or: docker buildx bake   (targets are defined in docker-bake.hcl)
+./utils/docker/build-all.sh windows-x64      # one target
+./utils/docker/build-all.sh check            # all tests
+JOBS=6 TESTNET=TRUE DIST=/data/pdc ./utils/docker/build-all.sh
+```
+
+`build-all.sh` builds the targets one after another on purpose: several C++ builds at once can exhaust Docker's memory
+(Docker Desktop died that way on the development machine). `JOBS=0` (the default) sizes the parallelism from the CPUs and the
+free memory. The same builds without bake are listed below.
+
 Everything below runs from the repository root, with submodules checked out
 (`git submodule update --init --recursive`). `utils/docker/Dockerfile` builds the source tree it is run from; it never
 clones. Downloads are verified against pinned SHA-256 values.
@@ -45,8 +60,12 @@ clones. Downloads are verified against pinned SHA-256 values.
 | `docker build -f utils/docker/Dockerfile --target tests .` | builds and runs the unit tests (546 pass on this branch) |
 | `docker build -f utils/docker/Dockerfile --target walletlib-artifacts -o out .` | `libpdc_wallet_core.so` plus the Boost and OpenSSL libraries it needs, relocatable (`$ORIGIN` rpath) |
 | `docker build -f utils/docker/Dockerfile --target walletlib-dart-check .` | drives that library from the Flutter wallet's Dart code, offline |
+| `docker build -f utils/docker/Dockerfile --target win-artifacts -o out/windows .` | **Windows x64**, cross-compiled with MinGW-w64: `pdcd.exe`, `simplewallet.exe`, `connectivity_tool.exe`, `pdc_wallet_core.dll`, all statically linked |
+| `docker build -f utils/docker/Dockerfile --target wallet-web-artifacts -o out/web .` | the Flutter web wallet (static files) |
+| `docker build -f utils/docker/Dockerfile --target wallet-linux-artifacts -o out/wallet-linux .` | the Flutter Linux desktop wallet with the native library beside it |
+| `docker build -f utils/docker/Dockerfile --target wallet-flutter-tests .` | Flutter analyzer and the 65 Flutter tests |
 | `--build-arg TESTNET=TRUE` | testnet binaries (other ports, network id and fork schedule) for any of the above |
-| `--build-arg JOBS=8`, `GTEST_FILTER='pattern*'` | limit parallelism, narrow the test run |
+| `--build-arg JOBS=8`, `--build-arg PDC_ENGINE=native`, `GTEST_FILTER='pattern*'` | limit parallelism, narrow the test run |
 | `utils/docker/e2e/run.sh` | the end-to-end test: testnet node + gateway + real wallet engine (see `utils/docker/README.md`) |
 
 The first build compiles Boost and OpenSSL (tens of minutes); BuildKit caches them and a ccache mount keeps later rebuilds
@@ -94,11 +113,24 @@ Unit tests: configure with `-D BUILD_TESTS=ON` and `make unit_tests && ./tests/u
   installers are not Authenticode-signed.
 - **Flutter wallet app (verified here):** `cd wallet-flutter && flutter build windows --release` produces
   `build\windows\x64\runner\Release\pdc_wallet.exe` (needs Visual Studio's "Desktop development with C++").
-- **Wallet library (not built):** `-D BUILD_WALLET_CORE_LIB=ON` is meant to work with MSVC (the header already uses
-  `__declspec(dllexport)` and the shim sits outside the globbed `wallet/` directory for that reason), but it has only been
-  compiled with GCC. Expect work on static Boost/OpenSSL linkage and on shipping the DLLs next to `pdc_wallet.exe` (the app
-  looks for `pdc_wallet_core.dll` beside the executable, or at `PDC_WALLET_CORE_LIB`).
-- **Cross-compiling from Linux (MinGW-w64):** not supported by this code base's CI and not verified. Use a Windows runner.
+- **Cross-compiled from Linux (verified here):** `docker build -f utils/docker/Dockerfile --target win-artifacts -o out/windows .`
+  produces `pdcd.exe`, `simplewallet.exe`, `connectivity_tool.exe` and `pdc_wallet_core.dll` with MinGW-w64 (posix threads, GCC 10),
+  Boost 1.84 and OpenSSL 1.1.1w cross-compiled in their own cached stages, everything statically linked, so there are no
+  DLLs to ship. On Windows 11 the cross-compiled `pdcd.exe` reports its version and the mainnet genesis, loads the chain
+  snapshot and answers RPC, and the DLL passes `wallet-flutter/tool/real_engine_check` (create, reopen, wrong password,
+  restore reproducing the address, clean failures). Getting there needed small, platform-neutral source fixes (listed in the
+  commit message): `execinfo.h` only off Windows, the MSVC-only `ui64` literal in `ecrypt-config.h`, the case of `psapi.h`, no
+  LTO with MinGW (internal compiler error), the Windows system libraries that MSVC pulls in through `#pragma comment(lib)`, and
+  `-municode` for `simplewallet`'s `wmain`. The toolchain file is `utils/toolchains/mingw-w64-x86_64.cmake`. These are not
+  code-signed.
+- **Wallet library with MSVC:** not built; the MinGW DLL above is the one that was verified.
+- **Flutter app with the DLL:** build the app on Windows (Flutter cannot cross-compile desktop apps), then copy the DLL beside the
+  executable: `flutter build windows --release --dart-define=PDC_ENGINE=native` and
+  `copy dist\windows-x64\pdc_wallet_core.dll wallet-flutteruild\windowsdunner\Release\`. Verified: the app loads the
+  DLL and closes in under a second.
+- **Exiting:** the engine must be stopped with `pdc_wallet_shutdown()` (the app does it when it is asked to exit). Without it a
+  process using the DLL finished its work and never ended, because the engine joined its threads in a static destructor under
+  the Windows loader lock.
 
 Windows build hygiene that cost time here: keep Docker's data and the Flutter pub cache off a nearly full `C:` drive (see
 "Troubleshooting"), and use `MSYS_NO_PATHCONV=1` when running the shell scripts under Git Bash.
