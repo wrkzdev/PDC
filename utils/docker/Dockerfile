@@ -104,11 +104,13 @@ RUN test -f contrib/randomx/CMakeLists.txt || \
 FROM source AS build
 
 ARG JOBS=0
+# --build-arg TESTNET=TRUE builds the testnet daemon (other ports, network id and hard-fork schedule)
+ARG TESTNET=FALSE
 RUN --mount=type=cache,target=/root/.ccache \
     set -eux; \
     mkdir -p /build/release && cd /build/release; \
     cmake -D BOOST_ROOT=/opt/boost -D OPENSSL_ROOT_DIR=/opt/openssl \
-          -D BUILD_GUI=OFF -D STATIC=true -D CMAKE_BUILD_TYPE=Release -D BUILD_TESTS=OFF \
+          -D BUILD_GUI=OFF -D STATIC=true -D CMAKE_BUILD_TYPE=Release -D BUILD_TESTS=OFF -D TESTNET=${TESTNET} \
           -D CMAKE_C_COMPILER_LAUNCHER=ccache -D CMAKE_CXX_COMPILER_LAUNCHER=ccache \
           /src; \
     make -j"$([ "${JOBS}" -gt 0 ] && echo "${JOBS}" || nproc)" daemon simplewallet connectivity_tool; \
@@ -122,12 +124,13 @@ RUN --mount=type=cache,target=/root/.ccache \
 FROM source AS walletlib
 
 ARG JOBS=0
+ARG TESTNET=FALSE
 RUN apt-get update && apt-get install -y --no-install-recommends patchelf && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=cache,target=/root/.ccache \
     set -eux; \
     mkdir -p /build/walletlib && cd /build/walletlib; \
     cmake -D BOOST_ROOT=/opt/boost -D OPENSSL_ROOT_DIR=/opt/openssl \
-          -D BUILD_WALLET_CORE_LIB=ON -D BUILD_GUI=OFF -D CMAKE_BUILD_TYPE=Release -D BUILD_TESTS=OFF \
+          -D BUILD_WALLET_CORE_LIB=ON -D BUILD_GUI=OFF -D CMAKE_BUILD_TYPE=Release -D BUILD_TESTS=OFF -D TESTNET=${TESTNET} \
           -D CMAKE_C_COMPILER_LAUNCHER=ccache -D CMAKE_CXX_COMPILER_LAUNCHER=ccache \
           /src; \
     make -j"$([ "${JOBS}" -gt 0 ] && echo "${JOBS}" || nproc)" pdc_wallet_core; \
@@ -211,3 +214,27 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
 ENTRYPOINT ["./pdcd"]
 # RPC binds 0.0.0.0 inside the container so a published port reaches it; publish it on 127.0.0.1 only
 CMD ["--data-dir=/home/pdc/.PDC", "--disable-upnp", "--rpc-bind-ip=0.0.0.0", "--log-level=0"]
+
+###########################################################################################
+# End-to-end test pieces (utils/docker/e2e/run.sh): a testnet node on accelerated time, and the runner that drives
+# the real wallet engine against it through the gateway. Build both with --build-arg TESTNET=TRUE.
+###########################################################################################
+FROM runtime AS node-e2e
+USER root
+# libfaketime lets the test node run its clock 60x faster, so the 120 s block target is ~2 s and a few hundred
+# blocks take minutes. Test builds only: nothing else uses this stage.
+RUN apt-get update && apt-get install -y --no-install-recommends faketime && rm -rf /var/lib/apt/lists/*
+USER pdc:pdc
+ENTRYPOINT ["faketime", "-f", "+0 x60", "./pdcd"]
+
+FROM dart:stable AS e2e-runner
+COPY --from=walletlib /build/dist/ /opt/pdc/
+COPY wallet-flutter/lib /w/lib
+COPY wallet-flutter/tool/real_engine_check /w/tool/real_engine_check
+WORKDIR /w/tool/real_engine_check
+RUN dart pub get
+ENV PDC_WALLET_CORE_LIB=/opt/pdc/libpdc_wallet_core.so
+CMD ["dart", "run", "bin/e2e.dart"]
+
+# The last stage is what a plain `docker build` produces: keep that the runtime image.
+FROM runtime AS final

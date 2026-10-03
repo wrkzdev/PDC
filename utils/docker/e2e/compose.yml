@@ -1,0 +1,48 @@
+# End-to-end test of the Flutter wallet's engine on a real chain. Run it with utils/docker/e2e/run.sh.
+#
+#   runner (real wallet engine, driven by the wallet's Dart code)
+#      -> gateway (the production allowlist/CORS/rate-limit proxy)
+#         -> node (testnet pdcd on accelerated time, offline, mined by the runner)
+
+name: pdc-e2e
+
+x-build: &build
+  context: ../../..
+  dockerfile: utils/docker/Dockerfile
+  args:
+    TESTNET: "TRUE"
+
+services:
+  node:
+    build:
+      <<: *build
+      target: node-e2e
+    command:
+      - --data-dir=/home/pdc/.PDC
+      - --disable-upnp
+      - --rpc-bind-ip=0.0.0.0
+      - --offline-mode
+      - --rpc-ignore-offline
+      - --log-level=0
+    # no published ports: only the other containers reach it
+
+  gateway:
+    build:
+      context: ../gateway
+    environment:
+      PDCD_UPSTREAM: node:19111      # testnet RPC port
+      RATE_LIGHT: "2000"             # a syncing wallet is far busier than the production defaults allow
+      RATE_HEAVY: "500"
+      ACCESS_LOG: stdout             # method, path and status only: shows which routes a wallet really uses
+    depends_on:
+      - node
+
+  runner:
+    build:
+      <<: *build
+      target: e2e-runner
+    environment:
+      NODE_RPC: http://node:19111
+      GATEWAY_URL: http://gateway:8080
+    depends_on:
+      - gateway

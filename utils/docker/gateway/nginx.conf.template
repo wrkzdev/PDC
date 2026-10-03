@@ -12,8 +12,10 @@ http {
 
   default_type application/octet-stream;
   server_tokens off;
-  # Clients' IPs are not logged: this node is meant to be used by wallets, which leak enough as it is.
-  access_log off;
+  # Clients' IPs are never logged. By default nothing is logged at all (wallets leak enough as it is); set ACCESS_LOG=stdout
+  # to log method, path and status only, e.g. to see which routes a new client needs.
+  log_format pdc_minimal '$request_method $uri $status';
+  ${ACCESS_LOG_DIRECTIVE}
 
   client_body_temp_path /tmp/client_temp;
   proxy_temp_path       /tmp/proxy_temp;
