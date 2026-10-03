@@ -237,5 +237,172 @@ RUN dart pub get
 ENV PDC_WALLET_CORE_LIB=/opt/pdc/libpdc_wallet_core.so
 CMD ["dart", "run", "bin/e2e.dart"]
 
+###########################################################################################
+# Flutter wallet: tests, web app, Linux desktop bundle (all built inside Docker)
+#   docker build --target wallet-flutter-tests .
+#   docker build --target wallet-web-artifacts -o out/web .
+#   docker build --target wallet-linux-artifacts -o out/wallet-linux .      (add --platform linux/arm64 for arm64)
+###########################################################################################
+FROM ubuntu:${UBUNTU_VERSION} AS flutter-sdk
+
+ARG FLUTTER_VERSION=3.38.7
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl git unzip xz-utils zip libglu1-mesa \
+      build-essential clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch "${FLUTTER_VERSION}" https://github.com/flutter/flutter.git /opt/flutter
+ENV PATH=/opt/flutter/bin:${PATH} \
+    FLUTTER_SUPPRESS_ANALYTICS=true \
+    CI=true
+RUN git config --global --add safe.directory /opt/flutter \
+    && flutter config --no-analytics --enable-linux-desktop \
+    && flutter precache --linux --web
+
+FROM flutter-sdk AS wallet-src
+WORKDIR /app
+COPY wallet-flutter/pubspec.yaml wallet-flutter/pubspec.lock ./
+RUN flutter pub get
+COPY wallet-flutter/ ./
+# native_stub includes ../../src/wallet_core_lib/pdc_wallet_core.h relative to the Flutter folder
+COPY src/wallet_core_lib/pdc_wallet_core.h /src/wallet_core_lib/pdc_wallet_core.h
+RUN flutter pub get --offline
+
+# analyzer + the whole Flutter test suite (fails the build on any problem)
+FROM wallet-src AS wallet-flutter-tests
+RUN flutter analyze && flutter test --reporter expanded
+
+# web app: static files, serve them behind the gateway's origin or any static host
+FROM wallet-src AS wallet-web
+ARG PDC_ENGINE=demo
+RUN flutter build web --release --dart-define=PDC_ENGINE=${PDC_ENGINE}
+
+FROM scratch AS wallet-web-artifacts
+COPY --from=wallet-web /app/build/web /
+
+# Linux desktop app with the native wallet library bundled next to the executable
+FROM wallet-src AS wallet-linux
+# PDC_ENGINE=native uses the bundled libpdc_wallet_core.so; demo (default) uses the in-memory fake engine
+ARG PDC_ENGINE=demo
+RUN flutter build linux --release --dart-define=PDC_ENGINE=${PDC_ENGINE}
+COPY --from=walletlib /build/dist/ /native/
+RUN set -eux; \
+    BUNDLE="$(find build/linux -type d -name bundle | head -n1)"; \
+    cp /native/* "$BUNDLE"/; \
+    mkdir -p /out && cp -a "$BUNDLE"/. /out/; \
+    ls -l /out
+
+FROM scratch AS wallet-linux-artifacts
+COPY --from=wallet-linux /out /
+
+###########################################################################################
+# Windows x64 cross-compile (MinGW-w64, posix threads) from Linux
+#   docker build --target win-artifacts -o out/windows .
+# Daemon, wallet, tools and the wallet library as a DLL, all statically linked to Boost, OpenSSL 1.1.1w and the C++ runtime.
+###########################################################################################
+FROM ubuntu:${UBUNTU_VERSION} AS win-toolchain
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential ca-certificates ccache cmake curl git perl pkg-config \
+      gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix mingw-w64-tools \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix \
+    && update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+WORKDIR /build
+
+FROM win-toolchain AS boost-win
+
+ARG BOOST_VERSION_DOT=1.84.0
+ARG BOOST_HASH=cc4b893acf645c9d4b698e9a0f08ca8846aa5d6c68275c14c3e7949c24109454
+ARG JOBS=0
+RUN set -eux; \
+    BOOST_VERSION="$(echo "${BOOST_VERSION_DOT}" | tr . _)"; \
+    curl -fL -o boost.tar.bz2 "https://archives.boost.io/release/${BOOST_VERSION_DOT}/source/boost_${BOOST_VERSION}.tar.bz2"; \
+    echo "${BOOST_HASH}  boost.tar.bz2" | sha256sum -c -; \
+    mkdir /opt/boost-win && tar -xjf boost.tar.bz2 -C /opt/boost-win --strip-components=1; \
+    rm boost.tar.bz2; \
+    cd /opt/boost-win; \
+    ./bootstrap.sh; \
+    echo "using gcc : mingw : x86_64-w64-mingw32-g++ ;" > /root/user-config.jam; \
+    ./b2 --user-config=/root/user-config.jam -j"$([ "${JOBS}" -gt 0 ] && echo "${JOBS}" || nproc)" \
+         toolset=gcc-mingw target-os=windows address-model=64 architecture=x86 \
+         link=static runtime-link=static threading=multi variant=release --layout=system \
+         boost.locale.icu=off \
+         --with-system --with-filesystem --with-thread --with-date_time --with-chrono --with-regex \
+         --with-serialization --with-atomic --with-program_options --with-locale --with-timer --with-log \
+         stage; \
+    rm -rf /opt/boost-win/bin.v2
+
+FROM win-toolchain AS openssl-win
+
+ARG OPENSSL_VERSION_DOT=1.1.1w
+ARG OPENSSL_HASH=cf3098950cb4d853ad95c0841f1f9c6d3dc102dccfcacd521d93925208b76ac8
+ARG JOBS=0
+RUN set -eux; \
+    curl -fL -o openssl.tar.gz "https://github.com/openssl/openssl/releases/download/OpenSSL_$(echo "${OPENSSL_VERSION_DOT}" | tr . _)/openssl-${OPENSSL_VERSION_DOT}.tar.gz"; \
+    echo "${OPENSSL_HASH}  openssl.tar.gz" | sha256sum -c -; \
+    tar xzf openssl.tar.gz; \
+    cd "openssl-${OPENSSL_VERSION_DOT}"; \
+    ./Configure mingw64 no-shared no-asm no-tests --cross-compile-prefix=x86_64-w64-mingw32- \
+        --prefix=/opt/openssl-win --openssldir=/opt/openssl-win; \
+    make -j"$([ "${JOBS}" -gt 0 ] && echo "${JOBS}" || nproc)"; \
+    make install_sw
+
+FROM win-toolchain AS win-source
+COPY --from=boost-win /opt/boost-win /opt/boost-win
+COPY --from=openssl-win /opt/openssl-win /opt/openssl-win
+COPY . /src
+WORKDIR /src
+
+FROM win-source AS win-build
+ARG JOBS=0
+ARG TESTNET=FALSE
+RUN --mount=type=cache,target=/root/.ccache \
+    set -eux; \
+    mkdir -p /build/win && cd /build/win; \
+    cmake -D CMAKE_TOOLCHAIN_FILE=/src/utils/toolchains/mingw-w64-x86_64.cmake \
+          -D BOOST_ROOT=/opt/boost-win -D BOOST_LIBRARYDIR=/opt/boost-win/stage/lib \
+          -D OPENSSL_ROOT_DIR=/opt/openssl-win -D OPENSSL_USE_STATIC_LIBS=TRUE \
+          -D BUILD_GUI=OFF -D STATIC=TRUE -D DISABLE_TOR=TRUE -D CMAKE_BUILD_TYPE=Release -D BUILD_TESTS=OFF \
+          -D TESTNET=${TESTNET} \
+          -D CMAKE_C_COMPILER_LAUNCHER=ccache -D CMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          /src; \
+    if [ "${JOBS}" -gt 0 ]; then J="${JOBS}"; else \
+      J="$(awk -v n="$(nproc)" '/MemAvailable/ {g=int($2/1024/1024/2); if (g<1) g=1; print (g<n?g:n)}' /proc/meminfo)"; fi; \
+    echo "building with $J parallel jobs"; \
+    make -k -j"$J" daemon simplewallet connectivity_tool; \
+    mkdir -p /out && cp src/pdcd.exe src/simplewallet.exe src/connectivity_tool.exe /out/; \
+    x86_64-w64-mingw32-strip /out/*.exe; \
+    ls -l /out
+
+# Wallet library for the Flutter app as a DLL: the same remote-only configuration as the Linux library
+FROM win-source AS win-walletlib
+ARG JOBS=0
+ARG TESTNET=FALSE
+RUN --mount=type=cache,target=/root/.ccache \
+    set -eux; \
+    mkdir -p /build/winlib && cd /build/winlib; \
+    cmake -D CMAKE_TOOLCHAIN_FILE=/src/utils/toolchains/mingw-w64-x86_64.cmake \
+          -D BOOST_ROOT=/opt/boost-win -D BOOST_LIBRARYDIR=/opt/boost-win/stage/lib \
+          -D OPENSSL_ROOT_DIR=/opt/openssl-win -D OPENSSL_USE_STATIC_LIBS=TRUE \
+          -D BUILD_WALLET_CORE_LIB=ON -D BUILD_GUI=OFF -D DISABLE_TOR=TRUE -D CMAKE_BUILD_TYPE=Release -D BUILD_TESTS=OFF \
+          -D TESTNET=${TESTNET} \
+          -D "CMAKE_SHARED_LINKER_FLAGS=-static" \
+          -D CMAKE_C_COMPILER_LAUNCHER=ccache -D CMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          /src; \
+    if [ "${JOBS}" -gt 0 ]; then J="${JOBS}"; else \
+      J="$(awk -v n="$(nproc)" '/MemAvailable/ {g=int($2/1024/1024/2); if (g<1) g=1; print (g<n?g:n)}' /proc/meminfo)"; fi; \
+    echo "building with $J parallel jobs"; \
+    make -j"$J" pdc_wallet_core; \
+    mkdir -p /out && cp "$(find /build/winlib -name 'pdc_wallet_core.dll' | head -n1)" /out/pdc_wallet_core.dll; \
+    x86_64-w64-mingw32-strip --strip-unneeded /out/pdc_wallet_core.dll; \
+    ls -l /out
+
+# everything for Windows x64: node, wallet, tools and the wallet library (all statically linked, no DLLs to ship)
+FROM scratch AS win-artifacts
+COPY --from=win-build /out /
+COPY --from=win-walletlib /out /
+
 # The last stage is what a plain `docker build` produces: keep that the runtime image.
 FROM runtime AS final

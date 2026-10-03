@@ -9,7 +9,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
-#include <Psapi.h>
+#include <psapi.h>
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "dbghelp.lib")
 

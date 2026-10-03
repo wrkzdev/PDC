@@ -215,7 +215,8 @@ else()
   endif()
   set(RELEASE_FLAGS "-Ofast -DNDEBUG -Wno-unused-variable")
 
-  if(NOT APPLE AND NOT (CMAKE_SYSTEM_NAME STREQUAL "Android"))
+  # no LTO with MinGW: the cross GCC hits an internal compiler error in lto-partition.c
+  if(NOT APPLE AND NOT MINGW AND NOT (CMAKE_SYSTEM_NAME STREQUAL "Android"))
     set(RELEASE_FLAGS "${RELEASE_FLAGS} -flto")
   endif()
   #if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND NOT MINGW)
@@ -293,7 +294,8 @@ message(STATUS "Boost: ${Boost_VERSION} from ${Boost_LIBRARY_DIRS}")
 
 include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/contrib ${Boost_INCLUDE_DIRS} ${PROJECT_SOURCE_DIR}/contrib/ethereum/libethash ${PROJECT_SOURCE_DIR}/contrib/randomx/src)
 if(MINGW)
-  set(Boost_LIBRARIES "${Boost_LIBRARIES};ws2_32;mswsock")
+  # MSVC pulls most of these in with #pragma comment(lib, ...), which GCC ignores
+  set(Boost_LIBRARIES "${Boost_LIBRARIES};ws2_32;mswsock;iphlpapi;ntdll;netapi32;dbghelp;imagehlp;psapi;bcrypt;crypt32;gdi32;shlwapi;userenv;secur32")
 elseif(NOT MSVC)
   if(NOT APPLE AND NOT CAKEWALLET)
     set(Boost_LIBRARIES "${Boost_LIBRARIES};")

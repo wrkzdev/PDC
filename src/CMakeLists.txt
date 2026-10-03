@@ -158,6 +158,10 @@ if(BUILD_WALLET_CORE_LIB)
   target_link_libraries(pdc_wallet_core wallet currency_core crypto common zlibstatic lmdb mdbx randomx ethash
     ${CMAKE_THREAD_LIBS_INIT} ${Boost_LIBRARIES} OpenSSL::SSL OpenSSL::Crypto)
   set_target_properties(pdc_wallet_core PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+  if(WIN32)
+    # the Flutter app looks for pdc_wallet_core.dll, not MinGW's default libpdc_wallet_core.dll
+    set_target_properties(pdc_wallet_core PROPERTIES PREFIX "")
+  endif()
   message("Building the remote-only wallet library (pdc_wallet_core); no daemon or tools in this configuration")
   return()
 endif()
@@ -201,6 +205,11 @@ target_link_libraries(simplewallet wallet rpc currency_core crypto common zlibst
 
 ENABLE_SHARED_PCH(simplewallet SIMPLEWALLET)
 ENABLE_SHARED_PCH_EXECUTABLE(simplewallet)
+
+if(MINGW)
+  # simplewallet.cpp defines wmain() on Windows; MinGW only picks that entry point with -municode
+  set_property(TARGET simplewallet APPEND_STRING PROPERTY LINK_FLAGS " -municode")
+endif()
 
 set_property(TARGET common crypto currency_core rpc stratum wallet PROPERTY FOLDER "libs")
 set_property(TARGET daemon simplewallet connectivity_tool PROPERTY FOLDER "prog")

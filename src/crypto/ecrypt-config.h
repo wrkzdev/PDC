@@ -255,7 +255,7 @@
 
 /* --- check __int64 --- */
 
-#ifdef _UI64_MAX
+#if defined(_UI64_MAX) && !defined(__GNUC__) /* gcc (MinGW) does not know the MSVC ui64 suffix */
 
 #if (_UI64_MAX / 0xFFFFFFFFui64 > 0xFFFFFFFFui64)
 #ifndef I64T
