@@ -1,0 +1,16 @@
+# keep the docker build context small; sources and contrib submodules must stay
+.git
+.github
+.githooks
+build
+build-*
+**/build
+website
+snap
+src/gui
+utils/docker
+**/*.o
+**/*.a
+**/*.exe
+**/CMakeCache.txt
+**/CMakeFiles

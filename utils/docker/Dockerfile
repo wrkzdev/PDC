@@ -1,151 +1,166 @@
+# syntax=docker/dockerfile:1.6
 ###########################################################################################
-## pdcd Dockerfile
+## PDC node Dockerfile - builds the source tree it is run from (no `git clone` inside)
 ###########################################################################################
-
 #
-# Usage:
-# (make sure you have correct permission for /var/data/pdc-data prior to run!)
+# Build from the repository root, with submodules checked out (git clone --recursive):
 #
-#   docker run --restart=always -v /var/data/pdc-data:/home/pdc/.PDC -p 19121:19121 -p 19211:19211 --name=pdcd -dit arqtras/pdc-full-node
+#   docker build -f utils/docker/Dockerfile -t pdc-node .                  # runtime image (pdcd + simplewallet)
+#   docker build -f utils/docker/Dockerfile --target tests -t pdc-tests .  # build + run the unit tests
+#   docker build -f utils/docker/Dockerfile --target artifacts -o out .    # export binaries to ./out
 #
-# To get into container and interact with the daemon:
-#   docker attach pdcd
+# Multi-platform (amd64 + arm64), see utils/docker/README.md for the native-runner caveat:
 #
-# To detach from container and left it running:
-#   Ctrl+P, Ctrl+Q
+#   docker buildx build --platform linux/amd64,linux/arm64 -f utils/docker/Dockerfile -t pdc-node .
 #
-# To stop container:
-#   docker stop pdcd
+# Run a node. Publish RPC on loopback only: the daemon RPC has no authentication or TLS.
+# Put utils/docker/compose.yml's gateway in front of it to serve wallets from a remote host.
 #
-# To build with different lib versions, pass through --build-arg's
-#   docker build --build-arg OPENSSL_VERSION_DOT=1.1.1n --build-arg OPENSSL_HASH=40dceb51a4f6a5275bde0e6bf20ef4b91bfc32ed57c0552e2e8e15463372b17a -f utils/docker/Dockerfile .
+#   docker run -d --name pdcd --restart unless-stopped \
+#     -v pdc-data:/home/pdc/.PDC -p 19121:19121 -p 127.0.0.1:19211:19211 pdc-node
 #
-# Available Build Args
-#   - CMake Version:    CMAKE_VERSION_DOT, CMAKE_HASH
-#   - Boost Version:    BOOST_VERSION, BOOST_VERSION_DOT, BOOST_HASH
-#   - OpenSSL Version:  OPENSSL_VERSION_DOT, OPENSSL_HASH
+# Build args (all downloads are verified against the sha256 below):
+#   UBUNTU_VERSION, BOOST_VERSION_DOT, BOOST_HASH, OPENSSL_VERSION_DOT, OPENSSL_HASH, JOBS
 
-#
-# Build PDC
-#
+ARG UBUNTU_VERSION=22.04
 
-FROM ubuntu:18.04 as build-prep
+###########################################################################################
+# Toolchain
+###########################################################################################
+FROM ubuntu:${UBUNTU_VERSION} AS toolchain
 
-ENV DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential \
+      ca-certificates \
+      ccache \
+      cmake \
+      curl \
+      git \
+      libicu-dev \
+      pkg-config \
+      zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN apt update && \
-    apt install -y build-essential \
-    libicu-dev \
-    libz-dev \
-    curl \
-    gcc-8 \
-    g++-8 \
-    git
+WORKDIR /build
 
-RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 700 --slave /usr/bin/g++ g++ /usr/bin/g++-7 && \
-    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 800 --slave /usr/bin/g++ g++ /usr/bin/g++-8
+###########################################################################################
+# Boost (own stage so BuildKit builds it in parallel with OpenSSL and caches it)
+###########################################################################################
+FROM toolchain AS boost
 
-WORKDIR /root
+ARG BOOST_VERSION_DOT=1.84.0
+ARG BOOST_HASH=cc4b893acf645c9d4b698e9a0f08ca8846aa5d6c68275c14c3e7949c24109454
+ARG JOBS=0
 
-# Lib Settings
-ARG CMAKE_VERSION_DOT=3.16.9
-ARG CMAKE_HASH=d71eda07d6ecf3964de65a0e36d0b171565e1aced56ba9f53ca3783406b5cacf
+RUN set -eux; \
+    BOOST_VERSION="$(echo "${BOOST_VERSION_DOT}" | tr . _)"; \
+    curl -fL -o boost.tar.bz2 "https://archives.boost.io/release/${BOOST_VERSION_DOT}/source/boost_${BOOST_VERSION}.tar.bz2"; \
+    echo "${BOOST_HASH}  boost.tar.bz2" | sha256sum -c -; \
+    mkdir /opt/boost && tar -xjf boost.tar.bz2 -C /opt/boost --strip-components=1; \
+    rm boost.tar.bz2; \
+    cd /opt/boost; \
+    ./bootstrap.sh --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,atomic,program_options,locale,timer,log; \
+    ./b2 -j"$([ "${JOBS}" -gt 0 ] && echo "${JOBS}" || nproc)"; \
+    rm -rf /opt/boost/bin.v2
 
-ARG BOOST_VERSION=1_70_0
-ARG BOOST_VERSION_DOT=1.70.0
-ARG BOOST_HASH=430ae8354789de4fd19ee52f3b1f739e1fba576f0aded0897c3c2bc00fb38778
+###########################################################################################
+# OpenSSL 1.1.1 (Boost.Asio 1.84 / the daemon are built against it, same as the release CI)
+###########################################################################################
+FROM toolchain AS openssl
 
 ARG OPENSSL_VERSION_DOT=1.1.1w
 ARG OPENSSL_HASH=cf3098950cb4d853ad95c0841f1f9c6d3dc102dccfcacd521d93925208b76ac8
+ARG JOBS=0
 
-# Environment Variables
-ENV BOOST_ROOT /root/boost_${BOOST_VERSION}
-ENV OPENSSL_ROOT_DIR=/root/openssl
+RUN set -eux; \
+    curl -fL -o openssl.tar.gz "https://github.com/openssl/openssl/releases/download/OpenSSL_$(echo "${OPENSSL_VERSION_DOT}" | tr . _)/openssl-${OPENSSL_VERSION_DOT}.tar.gz"; \
+    echo "${OPENSSL_HASH}  openssl.tar.gz" | sha256sum -c -; \
+    tar xzf openssl.tar.gz; \
+    cd "openssl-${OPENSSL_VERSION_DOT}"; \
+    ./config --prefix=/opt/openssl --openssldir=/opt/openssl shared zlib; \
+    make -j"$([ "${JOBS}" -gt 0 ] && echo "${JOBS}" || nproc)"; \
+    make install_sw
 
-##########################################################
-# Split download & compile to use dockers caching layers #
-##########################################################
+###########################################################################################
+# Sources + dependencies
+###########################################################################################
+FROM toolchain AS source
 
-# Download CMake
-RUN set -ex \
-    && curl https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION_DOT}/cmake-${CMAKE_VERSION_DOT}-Linux-x86_64.sh -OL\
-    && echo "${CMAKE_HASH}  cmake-${CMAKE_VERSION_DOT}-Linux-x86_64.sh" | sha256sum -c
+COPY --from=boost /opt/boost /opt/boost
+COPY --from=openssl /opt/openssl /opt/openssl
+ENV BOOST_ROOT=/opt/boost \
+    OPENSSL_ROOT_DIR=/opt/openssl \
+    LD_LIBRARY_PATH=/opt/openssl/lib
 
-# Download Boost
-RUN set -ex \
-    && curl -L -o  boost_${BOOST_VERSION}.tar.bz2 https://downloads.sourceforge.net/project/boost/boost/${BOOST_VERSION_DOT}/boost_${BOOST_VERSION}.tar.bz2 \
-    && sha256sum boost_${BOOST_VERSION}.tar.bz2 \
-    && echo "${BOOST_HASH}  boost_${BOOST_VERSION}.tar.bz2" | sha256sum -c\
-    && tar -xvf boost_${BOOST_VERSION}.tar.bz2
+COPY . /src
+WORKDIR /src
+RUN test -f contrib/randomx/CMakeLists.txt || \
+    { echo "Submodules are missing: run 'git submodule update --init --recursive' before docker build"; exit 1; }
 
+###########################################################################################
+# Release build (static, same flags as .github/workflows/main-cli.yml)
+###########################################################################################
+FROM source AS build
 
-# Download OpenSSL
-RUN curl https://www.openssl.org/source/openssl-${OPENSSL_VERSION_DOT}.tar.gz -OL \
-    &&  sha256sum openssl-${OPENSSL_VERSION_DOT}.tar.gz \
-    && echo "${OPENSSL_HASH} openssl-${OPENSSL_VERSION_DOT}.tar.gz" | sha256sum -c
+ARG JOBS=0
+RUN --mount=type=cache,target=/root/.ccache \
+    set -eux; \
+    mkdir -p /build/release && cd /build/release; \
+    cmake -D BOOST_ROOT=/opt/boost -D OPENSSL_ROOT_DIR=/opt/openssl \
+          -D BUILD_GUI=OFF -D STATIC=true -D CMAKE_BUILD_TYPE=Release -D BUILD_TESTS=OFF \
+          -D CMAKE_C_COMPILER_LAUNCHER=ccache -D CMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          /src; \
+    make -j"$([ "${JOBS}" -gt 0 ] && echo "${JOBS}" || nproc)" daemon simplewallet connectivity_tool; \
+    strip src/pdcd src/simplewallet src/connectivity_tool
 
+###########################################################################################
+# Unit tests (docker build --target tests): fails the build if a test fails
+###########################################################################################
+FROM source AS tests
 
-# Compile CMake
-RUN set -ex \
-    && mkdir /opt/cmake \
-    && sh cmake-3.16.9-Linux-x86_64.sh --prefix=/opt/cmake --skip-license\
-    && ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake\
-    && cmake --version\
-    && rm cmake-3.16.9-Linux-x86_64.sh
+ARG JOBS=0
+RUN --mount=type=cache,target=/root/.ccache \
+    set -eux; \
+    mkdir -p /build/tests && cd /build/tests; \
+    cmake -D BOOST_ROOT=/opt/boost -D OPENSSL_ROOT_DIR=/opt/openssl \
+          -D BUILD_GUI=OFF -D CMAKE_BUILD_TYPE=Release -D BUILD_TESTS=ON \
+          -D CMAKE_C_COMPILER_LAUNCHER=ccache -D CMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          /src; \
+    make -j"$([ "${JOBS}" -gt 0 ] && echo "${JOBS}" || nproc)" unit_tests; \
+    cd tests && ./unit_tests --gtest_color=no
 
-# Compile Boost
-RUN set -ex \
-    && cd boost_${BOOST_VERSION} \
-    && ./bootstrap.sh --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,atomic,program_options,locale,timer,log \
-    && ./b2
+###########################################################################################
+# Export only the binaries: docker build --target artifacts -o out .
+###########################################################################################
+FROM scratch AS artifacts
+COPY --from=build /build/release/src/pdcd /build/release/src/simplewallet /build/release/src/connectivity_tool /
 
-# Compile OpenSSL
-RUN set -ex \
-    && tar xaf openssl-${OPENSSL_VERSION_DOT}.tar.gz \
-    && rm openssl-${OPENSSL_VERSION_DOT}.tar.gz \
-    && cd openssl-${OPENSSL_VERSION_DOT} \
-    && ./config --prefix=/root/openssl --openssldir=/root/openssl shared zlib \
-    && make \
-    && make test \
-    && make install \
-    && cd .. \
-    && rm -rf openssl-${OPENSSL_VERSION_DOT}
+###########################################################################################
+# Runtime
+###########################################################################################
+FROM ubuntu:${UBUNTU_VERSION} AS runtime
 
-FROM build-prep as build
-
-# PDC
-
-RUN pwd && mem_avail_gb=$(( $(getconf _AVPHYS_PAGES) * $(getconf PAGE_SIZE) / (1024 * 1024 * 1024) )) &&\
-    make_job_slots=$(( $mem_avail_gb < 4 ? 1 : $mem_avail_gb / 4)) &&\
-    echo make_job_slots=$make_job_slots &&\
-    set -x &&\
-    git clone --single-branch --recursive https://github.com/PrivacyDataCoin-Project/PDC.git &&\
-    cd pdc &&\
-    mkdir build && cd build &&\
-    cmake -D STATIC=TRUE .. &&\
-    make -j $make_job_slots daemon simplewallet
-
-
-#
-# Run PDC
-#
-
-FROM ubuntu:18.04
-
-RUN useradd -ms /bin/bash pdc &&\
-    mkdir -p /home/pdc/.PDC &&\
-    chown -R pdc:pdc /home/pdc/.PDC
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -ms /bin/bash pdc \
+    && mkdir -p /home/pdc/.PDC \
+    && chown -R pdc:pdc /home/pdc/.PDC
 
 USER pdc:pdc
-
 WORKDIR /home/pdc
-COPY --chown=pdc:pdc --from=build /root/pdc/build/src/pdcd .
-COPY --chown=pdc:pdc --from=build /root/pdc/build/src/simplewallet .
+COPY --chown=pdc:pdc --from=build /build/release/src/pdcd /build/release/src/simplewallet ./
 
-# blockchain loaction
+# blockchain data lives here; an optional seed_nodes.txt goes next to it
 VOLUME /home/pdc/.PDC
 
+# 19121 p2p, 19211 daemon RPC (unauthenticated: never expose directly to the internet)
 EXPOSE 19121 19211
 
+HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:19211/getinfo > /dev/null || exit 1
+
 ENTRYPOINT ["./pdcd"]
-CMD ["--disable-upnp", "--rpc-bind-ip=0.0.0.0", "--log-level=0"]
+# RPC binds 0.0.0.0 inside the container so a published port reaches it; publish it on 127.0.0.1 only
+CMD ["--data-dir=/home/pdc/.PDC", "--disable-upnp", "--rpc-bind-ip=0.0.0.0", "--log-level=0"]

@@ -1,2 +1,5 @@
 .git* export-ignore
 /CMakeLists.txt export-subst
+# shell scripts and container files must keep LF line endings or they break inside Linux containers
+*.sh text eol=lf
+utils/docker/** text eol=lf
