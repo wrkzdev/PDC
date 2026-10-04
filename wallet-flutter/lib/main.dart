@@ -2,13 +2,16 @@ import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 
+import 'app/app_settings.dart';
 import 'app/wallet_controller.dart';
 import 'ui/home_page.dart';
 import 'ui/welcome_page.dart';
 import 'wallet/engine_choice.dart';
 import 'wallet/engine_factory.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final settings = await AppSettings.load();
   final EngineChoice engine;
   try {
     engine = createEngine(requestedEngine);
@@ -17,9 +20,16 @@ void main() {
     runApp(StartupErrorApp(message: e.toString()));
     return;
   }
-  runApp(PdcWalletApp(
-    controller: WalletController(engine.core, isDemoEngine: engine.isDemo, pollInterval: const Duration(seconds: 5)),
-  ));
+  runApp(
+    PdcWalletApp(
+      controller: WalletController(
+        engine.core,
+        isDemoEngine: engine.isDemo,
+        pollInterval: const Duration(seconds: 5),
+        settings: settings,
+      ),
+    ),
+  );
 }
 
 class StartupErrorApp extends StatelessWidget {
@@ -62,7 +72,9 @@ class _PdcWalletAppState extends State<PdcWalletApp> {
     // Stop the wallet engine before the process exits: on Windows an engine still running at exit can leave a process that
     // never ends. Failures must not keep the window from closing.
     _lifecycle = AppLifecycleListener(
-      onStateChange: (s) => controller.setForeground(s == AppLifecycleState.resumed || s == AppLifecycleState.inactive),
+      onStateChange: (s) => controller.setForeground(
+        s == AppLifecycleState.resumed || s == AppLifecycleState.inactive,
+      ),
       onExitRequested: () async {
         try {
           await controller.shutdown().timeout(const Duration(seconds: 10));
@@ -83,14 +95,24 @@ class _PdcWalletAppState extends State<PdcWalletApp> {
   @override
   Widget build(BuildContext context) {
     const seed = Color(0xFF3B2F8F);
-    return MaterialApp(
-      title: 'PDC Wallet',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: seed, useMaterial3: true),
-      darkTheme: ThemeData(colorSchemeSeed: seed, brightness: Brightness.dark, useMaterial3: true),
-      home: ListenableBuilder(
-        listenable: controller,
-        builder: (context, _) => controller.isOpen ? HomePage(controller: controller) : WelcomePage(controller: controller),
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) => MaterialApp(
+        title: 'PDC Wallet',
+        themeMode: controller.themeMode,
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(colorSchemeSeed: seed, useMaterial3: true),
+        darkTheme: ThemeData(
+          colorSchemeSeed: seed,
+          brightness: Brightness.dark,
+          useMaterial3: true,
+        ),
+        home: ListenableBuilder(
+          listenable: controller,
+          builder: (context, _) => controller.isOpen
+              ? HomePage(controller: controller)
+              : WelcomePage(controller: controller),
+        ),
       ),
     );
   }

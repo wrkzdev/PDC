@@ -1,18 +1,35 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show ThemeMode;
 
 import '../core/amount.dart';
 import '../core/asset_rules.dart';
 import '../wallet/wallet_core.dart';
+import 'app_settings.dart';
 
 /// App state shared by the screens. Talks only to [WalletCore], so it works the same with the demo engine and the
 /// real one.
 class WalletController extends ChangeNotifier {
   /// [pollInterval] is how often balances, history and sync state are re-read while a wallet is open; null turns
   /// polling off (tests drive [refresh] by hand).
-  WalletController(this.core, {NodeEndpoint? node, required this.isDemoEngine, this.pollInterval})
-      : node = node ?? NodeEndpoint('http://127.0.0.1:19211');
+  WalletController(this.core, {NodeEndpoint? node, required this.isDemoEngine, this.pollInterval, AppSettings? settings})
+      : settings = settings ?? AppSettings.memory(),
+        node = node ?? _savedNode(settings) ?? NodeEndpoint('http://127.0.0.1:19211');
+
+  /// The node saved by an earlier run, if it is still acceptable.
+  static NodeEndpoint? _savedNode(AppSettings? s) {
+    final url = s?.nodeUrl;
+    if (url == null) return null;
+    try {
+      final e = NodeEndpoint(url);
+      return e.isSecureEnough ? e : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  final AppSettings settings;
 
   final WalletCore core;
   final Duration? pollInterval;
@@ -54,6 +71,25 @@ class WalletController extends ChangeNotifier {
   Future<void> setNode(NodeEndpoint endpoint) async {
     await _guard(() => core.connect(endpoint));
     node = endpoint;
+    settings.nodeUrl = endpoint.url;
+    await settings.save();
+  }
+
+  /// Name of the wallet opened last time, so the welcome screen can offer "Open" first.
+  String? get lastWalletName => settings.lastWalletName;
+
+  ThemeMode get themeMode => settings.themeMode;
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    settings.themeMode = mode;
+    notifyListeners();
+    await settings.save();
+  }
+
+  Future<void> _remember(String name) async {
+    settings.nodeUrl = node.url;
+    settings.lastWalletName = name;
+    await settings.save();
   }
 
   /// Returns the recovery phrase; the caller must make the user write it down before continuing.
@@ -61,6 +97,7 @@ class WalletController extends ChangeNotifier {
         await core.connect(node);
         final seed = await core.createWallet(name: name, password: password);
         await _afterOpen();
+        await _remember(name);
         return seed;
       });
 
@@ -68,12 +105,14 @@ class WalletController extends ChangeNotifier {
         await core.connect(node);
         await core.restoreWallet(name: name, password: password, seedPhrase: seed, seedPassword: seedPassword);
         await _afterOpen();
+        await _remember(name);
       });
 
   Future<void> openWallet(String name, String password) => _guard(() async {
         await core.connect(node);
         await core.openWallet(name: name, password: password);
         await _afterOpen();
+        await _remember(name);
       });
 
   /// Called when the application is about to exit.

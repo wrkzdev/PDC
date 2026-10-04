@@ -16,8 +16,8 @@ class WelcomePage extends StatefulWidget {
 enum _Mode { create, restore, open }
 
 class _WelcomePageState extends State<WelcomePage> {
-  _Mode _mode = _Mode.create;
-  final _name = TextEditingController(text: 'my-wallet');
+  late _Mode _mode = widget.controller.lastWalletName == null ? _Mode.create : _Mode.open;
+  late final _name = TextEditingController(text: widget.controller.lastWalletName ?? 'my-wallet');
   final _password = TextEditingController();
   final _confirm = TextEditingController();
   final _seed = TextEditingController();
