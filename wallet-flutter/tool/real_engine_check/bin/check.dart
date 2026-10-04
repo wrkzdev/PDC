@@ -26,6 +26,8 @@ Future<String?> errorOf(Future<void> Function() f) async {
     return null;
   } on WalletException catch (e) {
     return e.message;
+  } on FormatException catch (e) {
+    return e.message;
   }
 }
 
@@ -89,6 +91,33 @@ Future<void> main() async {
   check('deploying an asset without funds is an error', deploy != null, deploy);
   final burn = await errorOf(() => core.burnAsset(asset: const AssetId('a5000000000000000000000000000000000000000000000000000000000000ff'), amount: Amount.parse('1', decimals: 2)).then((_) {}));
   check('burning an unknown asset is an error', burn != null, burn);
+
+  // restore from the secret keys must give the address of the same wallet restored from its phrase. The vector is the
+  // 25-word test phrase of tests/unit_tests/wallet_seed_test.cpp with its spend and view keys.
+  await core.closeWallet();
+  final vectorPhrase = '${List.filled(24, 'dew').join(' ')} god';
+  const vectorSpend = '5e051454d7226b5734ebd64f754b57db4c655ecda00bd324f1b241d0b6381c0f';
+  const vectorView = '7dde5590fdf430568c00556ac2accf09da6cde9a29a4bc7d1cb6fd267130f006';
+  await core.restoreWallet(name: 'vector-phrase.wallet', password: 'vector-pass-1', seedPhrase: vectorPhrase);
+  final vectorAddress = await core.address();
+  await core.closeWallet();
+  await core.restoreWalletFromKeys(name: 'vector-keys.wallet', password: 'vector-pass-2', spendKey: vectorSpend, viewKey: vectorView);
+  check('restore from keys gives the address of the same phrase', await core.address() == vectorAddress, vectorAddress.substring(0, 10));
+  check('a wallet restored from keys is not watch-only: its status answers', (await core.syncProgress()) >= 0);
+  await core.closeWallet();
+  await core.openWallet(name: 'vector-keys.wallet', password: 'vector-pass-2');
+  check('a wallet restored from keys reopens with the same address', await core.address() == vectorAddress);
+  await core.closeWallet();
+  // a spend key with the view key of another wallet is refused, and no wallet file is left behind
+  final mismatch = await errorOf(() => core.restoreWalletFromKeys(
+      name: 'vector-bad.wallet',
+      password: 'vector-pass-3',
+      spendKey: vectorSpend,
+      viewKey: '8454372096986c457f4e7dceef2f39b6050c35d87b31d9c9eb8d37bf8f1f430f'));
+  check('keys that do not belong together are refused', mismatch != null && mismatch.contains('WRONG_SEED'), mismatch);
+  check('no wallet file is created for refused keys', !File('$work/wallets/vector-bad.wallet').existsSync());
+  final shortKey = await errorOf(() => core.restoreWalletFromKeys(name: 'vector-bad2.wallet', password: 'vector-pass-4', spendKey: 'abc', viewKey: vectorView));
+  check('a malformed key is refused before the engine is called', shortKey != null, shortKey);
 
   await core.closeWallet();
   await api.shutdown(); // the engine must be stopped before exit, or the process can hang on Windows

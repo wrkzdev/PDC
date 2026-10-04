@@ -25,7 +25,10 @@ class AppSettings {
       s.nodeUrl = s._prefs!.getString(_kNode);
       s.lastWalletName = s._prefs.getString(_kWallet);
       final t = s._prefs.getString(_kTheme);
-      s.themeMode = ThemeMode.values.firstWhere((m) => m.name == t, orElse: () => ThemeMode.system);
+      s.themeMode = ThemeMode.values.firstWhere(
+        (m) => m.name == t,
+        orElse: () => ThemeMode.system,
+      );
       return s;
     } on Object {
       return AppSettings.memory();

@@ -46,13 +46,17 @@ class AssetRules {
       problems.add('Ticker must be 1-14 letters or digits.');
     }
     if (!_fullName.hasMatch(d.fullName)) {
-      problems.add('Name may use letters, digits, spaces and . , : ! ? - ( ) only (up to 400 characters).');
+      problems.add(
+        'Name may use letters, digits, spaces and . , : ! ? - ( ) only (up to 400 characters).',
+      );
     }
     if (d.decimalPoint < 0 || d.decimalPoint > maxDecimalPoint) {
       problems.add('Decimal places must be between 0 and $maxDecimalPoint.');
     }
     if (d.totalMaxSupply <= BigInt.zero || d.totalMaxSupply > maxUint64) {
-      problems.add('Maximum supply must be greater than zero and fit in 64 bits.');
+      problems.add(
+        'Maximum supply must be greater than zero and fit in 64 bits.',
+      );
     }
     if (d.initialSupply.isNegative || d.initialSupply > maxUint64) {
       problems.add('Initial supply must be zero or more and fit in 64 bits.');

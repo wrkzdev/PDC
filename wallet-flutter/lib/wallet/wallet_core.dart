@@ -13,7 +13,9 @@ class AssetId {
   final String hex;
 
   /// Id of the native coin (currency::native_coin_asset_id in currency_basic.h, the curve point H).
-  static const AssetId native = AssetId('d6329b5b1f7c0805b5c345f4957554002a2f557845f64d7645dae0e051a6498a');
+  static const AssetId native = AssetId(
+    'd6329b5b1f7c0805b5c345f4957554002a2f557845f64d7645dae0e051a6498a',
+  );
 
   bool get isNative => this == native;
 
@@ -56,7 +58,8 @@ class AssetBalance {
       other.unlocked == unlocked;
 
   @override
-  int get hashCode => Object.hash(assetId, ticker, fullName, decimalPoint, total, unlocked);
+  int get hashCode =>
+      Object.hash(assetId, ticker, fullName, decimalPoint, total, unlocked);
 }
 
 class WalletTx {
@@ -93,7 +96,16 @@ class WalletTx {
       other.comment == comment;
 
   @override
-  int get hashCode => Object.hash(txHash, height, timestamp, isIncoming, amount, assetId, fee, comment);
+  int get hashCode => Object.hash(
+    txHash,
+    height,
+    timestamp,
+    isIncoming,
+    amount,
+    assetId,
+    fee,
+    comment,
+  );
 }
 
 class DeployedAsset {
@@ -106,7 +118,9 @@ class DeployedAsset {
 class NodeEndpoint {
   NodeEndpoint(this.url) {
     final u = Uri.tryParse(url);
-    if (u == null || u.host.isEmpty || (u.scheme != 'http' && u.scheme != 'https')) {
+    if (u == null ||
+        u.host.isEmpty ||
+        (u.scheme != 'http' && u.scheme != 'https')) {
       throw FormatException('node address must be an http(s) URL', url);
     }
   }
@@ -129,7 +143,8 @@ class WalletException implements Exception {
   final String message;
   final int? code;
   @override
-  String toString() => 'WalletException($message${code == null ? '' : ', code $code'})';
+  String toString() =>
+      'WalletException($message${code == null ? '' : ', code $code'})';
 }
 
 abstract class WalletCore {
@@ -144,6 +159,16 @@ abstract class WalletCore {
     required String password,
     required String seedPhrase,
     String seedPassword = '',
+  });
+
+  /// Restores a spendable wallet from its secret spend key and secret view key (64 hex characters each, e.g. from
+  /// simplewallet's `spendkey` and `viewkey`). Gives the same address as the recovery phrase of that wallet, but the
+  /// wallet then has no recovery phrase to show. The engine refuses a pair of keys that do not belong together.
+  Future<void> restoreWalletFromKeys({
+    required String name,
+    required String password,
+    required String spendKey,
+    required String viewKey,
   });
 
   Future<void> openWallet({required String name, required String password});

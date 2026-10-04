@@ -10,7 +10,12 @@ abstract class RawWalletApi {
 
   /// plain_wallet::generate / restore / open: JSON `{"result":{"wallet_id":N,"seed":"..."}}` or `{"error":{"code":"..."}}`.
   Future<String> generate(String path, String password);
-  Future<String> restore(String seed, String path, String password, String seedPassword);
+  Future<String> restore(
+    String seed,
+    String path,
+    String password,
+    String seedPassword,
+  );
   Future<String> open(String path, String password);
 
   Future<String> closeWallet(int walletId);

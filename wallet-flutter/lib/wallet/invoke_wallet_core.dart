@@ -4,6 +4,7 @@
 // in the C++ engine behind RawWalletApi. 64-bit amounts always go through the exact JSON codec.
 
 import '../core/amount.dart';
+import '../core/secret_keys.dart';
 import '../core/asset_rules.dart';
 import '../core/json_exact.dart';
 import 'raw_wallet_api.dart';
@@ -49,12 +50,17 @@ class InvokeWalletCore implements WalletCore {
   }
 
   @override
-  Future<String> createWallet({required String name, required String password}) async {
+  Future<String> createWallet({
+    required String name,
+    required String password,
+  }) async {
     final result = _result(await _api.generate(name, password));
     _wallet = _walletIdOf(result);
     _cachedAddress = null;
     final seed = result['seed'];
-    if (seed is! String || seed.isEmpty) throw WalletException('engine did not return a recovery phrase');
+    if (seed is! String || seed.isEmpty) {
+      throw WalletException('engine did not return a recovery phrase');
+    }
     return seed;
   }
 
@@ -65,13 +71,32 @@ class InvokeWalletCore implements WalletCore {
     required String seedPhrase,
     String seedPassword = '',
   }) async {
-    final result = _result(await _api.restore(seedPhrase, name, password, seedPassword));
+    final result = _result(
+      await _api.restore(seedPhrase, name, password, seedPassword),
+    );
     _wallet = _walletIdOf(result);
     _cachedAddress = null;
   }
 
   @override
-  Future<void> openWallet({required String name, required String password}) async {
+  Future<void> restoreWalletFromKeys({
+    required String name,
+    required String password,
+    required String spendKey,
+    required String viewKey,
+  }) async {
+    final spend = normalizeSecretKey(spendKey, 'spend key');
+    final view = normalizeSecretKey(viewKey, 'view key');
+    final result = _result(await _api.restore('keys:$spend:$view', name, password, ''));
+    _wallet = _walletIdOf(result);
+    _cachedAddress = null;
+  }
+
+  @override
+  Future<void> openWallet({
+    required String name,
+    required String password,
+  }) async {
     final result = _result(await _api.open(name, password));
     _wallet = _walletIdOf(result);
     _cachedAddress = null;
@@ -102,7 +127,9 @@ class InvokeWalletCore implements WalletCore {
     if (cached != null) return cached;
     final r = await _call('getaddress');
     final a = r['address'];
-    if (a is! String || a.isEmpty) throw WalletException('wallet returned no address');
+    if (a is! String || a.isEmpty) {
+      throw WalletException('wallet returned no address');
+    }
     return _cachedAddress = a;
   }
 
@@ -119,14 +146,16 @@ class InvokeWalletCore implements WalletCore {
       final id = info['asset_id'];
       if (id is! String) continue;
       final decimals = _smallInt(info['decimal_point']);
-      out.add(AssetBalance(
-        assetId: AssetId(id),
-        ticker: (info['ticker'] as String?) ?? '',
-        fullName: (info['full_name'] as String?) ?? '',
-        decimalPoint: decimals,
-        total: Amount.fromAtomic(asBigInt(e['total']) ?? BigInt.zero),
-        unlocked: Amount.fromAtomic(asBigInt(e['unlocked']) ?? BigInt.zero),
-      ));
+      out.add(
+        AssetBalance(
+          assetId: AssetId(id),
+          ticker: (info['ticker'] as String?) ?? '',
+          fullName: (info['full_name'] as String?) ?? '',
+          decimalPoint: decimals,
+          total: Amount.fromAtomic(asBigInt(e['total']) ?? BigInt.zero),
+          unlocked: Amount.fromAtomic(asBigInt(e['unlocked']) ?? BigInt.zero),
+        ),
+      );
     }
     return out;
   }
@@ -161,20 +190,25 @@ class InvokeWalletCore implements WalletCore {
       final subs = t['subtransfers'];
       if (subs is! List) continue;
       final fee = Amount.fromAtomic(asBigInt(t['fee']) ?? BigInt.zero);
-      final ts = DateTime.fromMillisecondsSinceEpoch(_smallInt(t['timestamp']) * 1000, isUtc: true);
+      final ts = DateTime.fromMillisecondsSinceEpoch(
+        _smallInt(t['timestamp']) * 1000,
+        isUtc: true,
+      );
       // one entry per asset moved by the transaction
       for (final s in subs) {
         if (s is! Map<String, Object?>) continue;
-        out.add(WalletTx(
-          txHash: (t['tx_hash'] as String?) ?? '',
-          height: _smallInt(t['height']),
-          timestamp: ts,
-          isIncoming: s['is_income'] == true,
-          amount: Amount.fromAtomic(asBigInt(s['amount']) ?? BigInt.zero),
-          assetId: AssetId((s['asset_id'] as String?) ?? AssetId.native.hex),
-          fee: fee,
-          comment: (t['comment'] as String?) ?? '',
-        ));
+        out.add(
+          WalletTx(
+            txHash: (t['tx_hash'] as String?) ?? '',
+            height: _smallInt(t['height']),
+            timestamp: ts,
+            isIncoming: s['is_income'] == true,
+            amount: Amount.fromAtomic(asBigInt(s['amount']) ?? BigInt.zero),
+            assetId: AssetId((s['asset_id'] as String?) ?? AssetId.native.hex),
+            fee: fee,
+            comment: (t['comment'] as String?) ?? '',
+          ),
+        );
       }
     }
     return out;
@@ -188,7 +222,9 @@ class InvokeWalletCore implements WalletCore {
     Amount? fee,
     String comment = '',
   }) async {
-    if (amount.isZero) throw WalletException('amount must be greater than zero');
+    if (amount.isZero) {
+      throw WalletException('amount must be greater than zero');
+    }
     final r = await _call('transfer', {
       'destinations': [
         {'address': toAddress, 'amount': amount.atomic, 'asset_id': asset.hex},
@@ -201,7 +237,9 @@ class InvokeWalletCore implements WalletCore {
       'hide_receiver': false,
     });
     final h = r['tx_hash'];
-    if (h is! String || h.isEmpty) throw WalletException('wallet did not return a transaction id');
+    if (h is! String || h.isEmpty) {
+      throw WalletException('wallet did not return a transaction id');
+    }
     return h;
   }
 
@@ -209,7 +247,9 @@ class InvokeWalletCore implements WalletCore {
   Future<void> addCustomAsset(AssetId asset) async {
     final r = await _call('assets_whitelist_add', {'asset_id': asset.hex});
     final status = r['status'];
-    if (status != 'OK') throw WalletException('${status ?? 'the node does not know this asset'}');
+    if (status != 'OK') {
+      throw WalletException('${status ?? 'the node does not know this asset'}');
+    }
   }
 
   @override
@@ -236,13 +276,20 @@ class InvokeWalletCore implements WalletCore {
     });
     final tx = r['tx_id'];
     final id = r['new_asset_id'];
-    if (tx is! String || id is! String) throw WalletException('wallet did not return the new asset id');
+    if (tx is! String || id is! String) {
+      throw WalletException('wallet did not return the new asset id');
+    }
     return DeployedAsset(txId: tx, assetId: AssetId(id));
   }
 
   @override
-  Future<String> emitAsset({required AssetId asset, required Amount amount}) async {
-    if (amount.isZero) throw WalletException('amount must be greater than zero');
+  Future<String> emitAsset({
+    required AssetId asset,
+    required Amount amount,
+  }) async {
+    if (amount.isZero) {
+      throw WalletException('amount must be greater than zero');
+    }
     final me = await address();
     final r = await _call('emit_asset', {
       'asset_id': asset.hex,
@@ -255,9 +302,17 @@ class InvokeWalletCore implements WalletCore {
   }
 
   @override
-  Future<String> burnAsset({required AssetId asset, required Amount amount}) async {
-    if (amount.isZero) throw WalletException('amount must be greater than zero');
-    final r = await _call('burn_asset', {'asset_id': asset.hex, 'burn_amount': amount.atomic});
+  Future<String> burnAsset({
+    required AssetId asset,
+    required Amount amount,
+  }) async {
+    if (amount.isZero) {
+      throw WalletException('amount must be greater than zero');
+    }
+    final r = await _call('burn_asset', {
+      'asset_id': asset.hex,
+      'burn_amount': amount.atomic,
+    });
     return _txIdOf(r);
   }
 
@@ -269,10 +324,18 @@ class InvokeWalletCore implements WalletCore {
     return w;
   }
 
-  Future<Map<String, Object?>> _call(String method, [Map<String, Object?> params = const {}]) async {
+  Future<Map<String, Object?>> _call(
+    String method, [
+    Map<String, Object?> params = const {},
+  ]) async {
     final w = _requireWallet();
-    final request = encodeJsonExact({'jsonrpc': '2.0', 'id': _id++, 'method': method, 'params': params});
-    for (var attempt = 0;; attempt++) {
+    final request = encodeJsonExact({
+      'jsonrpc': '2.0',
+      'id': _id++,
+      'method': method,
+      'params': params,
+    });
+    for (var attempt = 0; ; attempt++) {
       try {
         return _result(await _api.invoke(w, request));
       } on WalletException catch (e) {
@@ -284,7 +347,9 @@ class InvokeWalletCore implements WalletCore {
 
   static String _txIdOf(Map<String, Object?> r) {
     final h = r['tx_id'] ?? r['tx_hash'];
-    if (h is! String || h.isEmpty) throw WalletException('wallet did not return a transaction id');
+    if (h is! String || h.isEmpty) {
+      throw WalletException('wallet did not return a transaction id');
+    }
     return h;
   }
 
@@ -300,7 +365,9 @@ class InvokeWalletCore implements WalletCore {
     final err = decoded['error'];
     if (err != null) throw _errorOf(err);
     final result = decoded['result'];
-    if (result is! Map<String, Object?>) throw WalletException('engine returned no result');
+    if (result is! Map<String, Object?>) {
+      throw WalletException('engine returned no result');
+    }
     return result;
   }
 
@@ -310,9 +377,13 @@ class InvokeWalletCore implements WalletCore {
       decoded = decodeJsonExact(reply);
     } on JsonExactException {
       // some engine calls answer with a bare status word such as BAD_ARG
-      throw WalletException(reply.trim().isEmpty ? 'engine returned an empty reply' : reply.trim());
+      throw WalletException(
+        reply.trim().isEmpty ? 'engine returned an empty reply' : reply.trim(),
+      );
     }
-    if (decoded is! Map<String, Object?>) throw WalletException('engine returned an unexpected reply');
+    if (decoded is! Map<String, Object?>) {
+      throw WalletException('engine returned an unexpected reply');
+    }
     return decoded;
   }
 
@@ -321,7 +392,9 @@ class InvokeWalletCore implements WalletCore {
       final code = err['code'];
       final message = err['message'];
       return WalletException(
-        (message is String && message.isNotEmpty) ? message : '${code ?? 'unknown error'}',
+        (message is String && message.isNotEmpty)
+            ? message
+            : '${code ?? 'unknown error'}',
         code: code is int ? code : null,
       );
     }

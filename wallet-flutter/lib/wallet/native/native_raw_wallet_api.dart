@@ -21,7 +21,9 @@ class NativeRawWalletApi implements RawWalletApi {
 
   Future<String> _run(String Function(PdcWalletBindings b) call) {
     final path = libraryPath;
-    return Isolate.run(() => call(PdcWalletBindings(DynamicLibrary.open(path))));
+    return Isolate.run(
+      () => call(PdcWalletBindings(DynamicLibrary.open(path))),
+    );
   }
 
   @override
@@ -31,23 +33,31 @@ class NativeRawWalletApi implements RawWalletApi {
   }
 
   @override
-  Future<String> generate(String path, String password) => _run((b) => b.generate(path, password));
+  Future<String> generate(String path, String password) =>
+      _run((b) => b.generate(path, password));
 
   @override
-  Future<String> restore(String seed, String path, String password, String seedPassword) =>
-      _run((b) => b.restore(seed, path, password, seedPassword));
+  Future<String> restore(
+    String seed,
+    String path,
+    String password,
+    String seedPassword,
+  ) => _run((b) => b.restore(seed, path, password, seedPassword));
 
   @override
-  Future<String> open(String path, String password) => _run((b) => b.open(path, password));
+  Future<String> open(String path, String password) =>
+      _run((b) => b.open(path, password));
 
   @override
   Future<String> closeWallet(int walletId) => _run((b) => b.close(walletId));
 
   @override
-  Future<String> getWalletStatus(int walletId) => _run((b) => b.status(walletId));
+  Future<String> getWalletStatus(int walletId) =>
+      _run((b) => b.status(walletId));
 
   @override
-  Future<String> invoke(int walletId, String jsonRpcRequest) => _run((b) => b.invoke(walletId, jsonRpcRequest));
+  Future<String> invoke(int walletId, String jsonRpcRequest) =>
+      _run((b) => b.invoke(walletId, jsonRpcRequest));
 
   @override
   Future<String> shutdown() => _run((b) => b.shutdown());
@@ -55,7 +65,10 @@ class NativeRawWalletApi implements RawWalletApi {
 
 /// Where the native library is expected, in order: the PDC_WALLET_CORE_LIB environment variable, then next to the
 /// executable (how releases ship it). Returns null when it is not found.
-String? findWalletCoreLibrary({Map<String, String>? environment, String? executablePath}) {
+String? findWalletCoreLibrary({
+  Map<String, String>? environment,
+  String? executablePath,
+}) {
   final env = environment ?? Platform.environment;
   final override = env['PDC_WALLET_CORE_LIB'];
   if (override != null && override.isNotEmpty) {
@@ -64,9 +77,11 @@ String? findWalletCoreLibrary({Map<String, String>? environment, String? executa
   final name = Platform.isWindows
       ? 'pdc_wallet_core.dll'
       : Platform.isMacOS
-          ? 'libpdc_wallet_core.dylib'
-          : 'libpdc_wallet_core.so';
-  final exeDir = File(executablePath ?? Platform.resolvedExecutable).parent.path;
+      ? 'libpdc_wallet_core.dylib'
+      : 'libpdc_wallet_core.so';
+  final exeDir = File(
+    executablePath ?? Platform.resolvedExecutable,
+  ).parent.path;
   final sep = Platform.pathSeparator;
   final candidates = [
     '$exeDir$sep$name',

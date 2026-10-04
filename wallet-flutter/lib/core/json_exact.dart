@@ -48,7 +48,9 @@ void _encode(Object? v, StringBuffer sb, int depth) {
   } else if (v is int) {
     sb.write(v.toString());
   } else if (v is double) {
-    if (v.isNaN || v.isInfinite) throw ArgumentError('NaN/Infinity is not JSON');
+    if (v.isNaN || v.isInfinite) {
+      throw ArgumentError('NaN/Infinity is not JSON');
+    }
     sb.write(v.toString());
   } else if (v is String) {
     sb.write(jsonEncode(v));
@@ -246,7 +248,9 @@ class _Parser {
       pos++;
     }
     if (pos == digitsStart) fail('invalid number');
-    if (s.codeUnitAt(digitsStart) == 0x30 && pos - digitsStart > 1) fail('leading zero');
+    if (s.codeUnitAt(digitsStart) == 0x30 && pos - digitsStart > 1) {
+      fail('leading zero');
+    }
     var isInt = true;
     if (pos < s.length && s[pos] == '.') {
       isInt = false;

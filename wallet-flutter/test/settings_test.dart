@@ -29,10 +29,10 @@ void main() {
     }
   });
 
-  test('a saved plain-http remote node is ignored instead of trusted', () async {
+  test('a saved plain-http remote node is kept: http and https are both allowed', () async {
     SharedPreferences.setMockInitialValues({'node_url': 'http://node.example.org:19211'});
     final c = WalletController(MockWalletCore(), isDemoEngine: true, settings: await AppSettings.load());
-    expect(c.node.url, 'http://127.0.0.1:19211');
+    expect(c.node.url, 'http://node.example.org:19211');
   });
 
   test('garbage in storage falls back to defaults', () async {

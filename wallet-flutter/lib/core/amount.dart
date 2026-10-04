@@ -20,7 +20,9 @@ class Amount implements Comparable<Amount> {
   /// Parses a plain decimal string such as "1", "1.5" or "0.000000000001".
   /// No sign, exponent, separators or more fractional digits than [decimals].
   factory Amount.parse(String text, {int decimals = nativeDecimals}) {
-    if (decimals < 0 || decimals > 18) throw RangeError('decimals must be 0..18');
+    if (decimals < 0 || decimals > 18) {
+      throw RangeError('decimals must be 0..18');
+    }
     final t = text.trim();
     final m = RegExp(r'^(\d+)(?:\.(\d+))?$').firstMatch(t);
     if (m == null) throw FormatException('not a decimal amount', text);
@@ -35,7 +37,9 @@ class Amount implements Comparable<Amount> {
 
   /// Formats with exactly the needed decimals ("1.5"), or all of them when [trim] is false ("1.500000000000").
   String format({int decimals = nativeDecimals, bool trim = true}) {
-    if (decimals < 0 || decimals > 18) throw RangeError('decimals must be 0..18');
+    if (decimals < 0 || decimals > 18) {
+      throw RangeError('decimals must be 0..18');
+    }
     if (decimals == 0) return atomic.toString();
     final s = atomic.toString().padLeft(decimals + 1, '0');
     final whole = s.substring(0, s.length - decimals);

@@ -18,26 +18,37 @@ class AssetsPage extends StatelessWidget {
       builder: (context, _) {
         final c = controller;
         final assets = c.balances.where((b) => !b.assetId.isNative).toList();
-        return ListView(
-          padding: const EdgeInsets.all(16),
+        return PageList(
           children: [
             Row(
               children: [
-                Expanded(child: Text('Assets', style: Theme.of(context).textTheme.titleLarge)),
+                Expanded(
+                  child: Text(
+                    'Assets',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
                 IconButton(
                   tooltip: 'Add an asset by id',
                   onPressed: () => _addById(context),
                   icon: const Icon(Icons.playlist_add),
                 ),
                 FilledButton.icon(
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => DeployAssetPage(controller: c))),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => DeployAssetPage(controller: c),
+                    ),
+                  ),
                   icon: const Icon(Icons.add),
                   label: const Text('Deploy asset'),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            if (assets.isEmpty) const Text('You do not hold any assets yet. Deploy one, or receive one from someone.'),
+            if (assets.isEmpty)
+              const Text(
+                'You do not hold any assets yet. Deploy one, or receive one from someone.',
+              ),
             for (final a in assets)
               Card(
                 child: ListTile(
@@ -47,11 +58,18 @@ class AssetsPage extends StatelessWidget {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      CopyIconButton(text: a.assetId.hex, what: 'Asset id copied', tooltip: 'Copy asset id'),
+                      CopyIconButton(
+                        text: a.assetId.hex,
+                        what: 'Asset id copied',
+                        tooltip: 'Copy asset id',
+                      ),
                       PopupMenuButton<String>(
                         onSelected: (v) => _manage(context, a, v),
                         itemBuilder: (_) => const [
-                          PopupMenuItem(value: 'emit', child: Text('Emit more (owner only)')),
+                          PopupMenuItem(
+                            value: 'emit',
+                            child: Text('Emit more (owner only)'),
+                          ),
                           PopupMenuItem(value: 'burn', child: Text('Burn')),
                         ],
                       ),
@@ -75,29 +93,55 @@ class AssetsPage extends StatelessWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Assets other people send you are hidden until you add them. Paste the asset id (64 hex characters). '
-                'Only add assets you recognise: anyone can create an asset with any name.'),
-            TextField(controller: text, autofocus: true, decoration: const InputDecoration(labelText: 'Asset id')),
+            const Text(
+              'Assets other people send you are hidden until you add them. Paste the asset id (64 hex characters). '
+              'Only add assets you recognise: anyone can create an asset with any name.',
+            ),
+            TextField(
+              controller: text,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Asset id'),
+            ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, text.text.trim().toLowerCase()), child: const Text('Add')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, text.text.trim().toLowerCase()),
+            child: const Text('Add'),
+          ),
         ],
       ),
     );
     text.dispose();
     if (id == null || !context.mounted) return;
     try {
-      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(id)) throw FormatException('An asset id is 64 hexadecimal characters.');
+      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(id)) {
+        throw FormatException('An asset id is 64 hexadecimal characters.');
+      }
       await controller.addCustomAsset(AssetId(id));
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Asset added')));
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Asset added')));
+      }
     } catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(describeError(e))));
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(describeError(e))));
+      }
     }
   }
 
-  Future<void> _manage(BuildContext context, AssetBalance a, String action) async {
+  Future<void> _manage(
+    BuildContext context,
+    AssetBalance a,
+    String action,
+  ) async {
     final controllerText = TextEditingController();
     final isEmit = action == 'emit';
     final amountText = await showDialog<String>(
@@ -107,20 +151,30 @@ class AssetsPage extends StatelessWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(isEmit
-                ? 'Creates new coins to this wallet. Only the asset owner can do this, up to the maximum supply. Fee: ${defaultFee.format()} PDC.'
-                : 'Destroys coins permanently and reduces the supply. This cannot be undone. Fee: ${defaultFee.format()} PDC.'),
+            Text(
+              isEmit
+                  ? 'Creates new coins to this wallet. Only the asset owner can do this, up to the maximum supply. Fee: ${defaultFee.format()} PDC.'
+                  : 'Destroys coins permanently and reduces the supply. This cannot be undone. Fee: ${defaultFee.format()} PDC.',
+            ),
             TextField(
               controller: controllerText,
               autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(labelText: 'Amount'),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, controllerText.text), child: Text(isEmit ? 'Emit' : 'Burn')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controllerText.text),
+            child: Text(isEmit ? 'Emit' : 'Burn'),
+          ),
         ],
       ),
     );
@@ -128,12 +182,22 @@ class AssetsPage extends StatelessWidget {
     if (amountText == null || !context.mounted) return;
     try {
       final amount = Amount.parse(amountText, decimals: a.decimalPoint);
-      final tx = isEmit ? await controller.emitAsset(a.assetId, amount) : await controller.burnAsset(a.assetId, amount);
+      final tx = isEmit
+          ? await controller.emitAsset(a.assetId, amount)
+          : await controller.burnAsset(a.assetId, amount);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Submitted. Transaction ${tx.substring(0, 12)}...')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Submitted. Transaction ${tx.substring(0, 12)}...'),
+          ),
+        );
       }
     } catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(describeError(e))));
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(describeError(e))));
+      }
     }
   }
 }
@@ -168,18 +232,29 @@ class _DeployAssetPageState extends State<DeployAssetPage> {
   AssetDraft? _draft() {
     final problems = <String>[];
     final decimals = int.tryParse(_decimals.text.trim());
-    if (decimals == null) problems.add('Decimal places must be a whole number.');
+    if (decimals == null) {
+      problems.add('Decimal places must be a whole number.');
+    }
     BigInt? max, initial;
-    if (decimals != null && decimals >= 0 && decimals <= AssetRules.maxDecimalPoint) {
+    if (decimals != null &&
+        decimals >= 0 &&
+        decimals <= AssetRules.maxDecimalPoint) {
       try {
         max = AssetRules.parseSupply(_max.text, decimals);
       } on Object {
-        problems.add('Maximum supply is not a valid number with up to $decimals decimal places.');
+        problems.add(
+          'Maximum supply is not a valid number with up to $decimals decimal places.',
+        );
       }
       try {
-        initial = AssetRules.parseSupply(_initial.text.isEmpty ? '0' : _initial.text, decimals);
+        initial = AssetRules.parseSupply(
+          _initial.text.isEmpty ? '0' : _initial.text,
+          decimals,
+        );
       } on Object {
-        problems.add('Initial supply is not a valid number with up to $decimals decimal places.');
+        problems.add(
+          'Initial supply is not a valid number with up to $decimals decimal places.',
+        );
       }
     }
     if (problems.isEmpty) {
@@ -206,22 +281,35 @@ class _DeployAssetPageState extends State<DeployAssetPage> {
     final draft = _draft();
     if (draft == null) return;
     if (!c.canPayFee) {
-      setState(() => _problems = ['You need at least ${defaultFee.format()} PDC unlocked to pay the network fee.']);
+      setState(
+        () => _problems = [
+          'You need at least ${defaultFee.format()} PDC unlocked to pay the network fee.',
+        ],
+      );
       return;
     }
-    String fmt(BigInt v) => Amount.fromAtomic(v).format(decimals: draft.decimalPoint);
+    String fmt(BigInt v) =>
+        Amount.fromAtomic(v).format(decimals: draft.decimalPoint);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Deploy this asset?'),
-        content: Text('Ticker: ${draft.ticker}\nName: ${draft.fullName}\nDecimal places: ${draft.decimalPoint}\n'
-            'Maximum supply: ${fmt(draft.totalMaxSupply)}\nInitial supply (sent to you): ${fmt(draft.initialSupply)}\n\n'
-            'Network fee: ${defaultFee.format()} PDC.\n'
-            'The ticker, name, decimals and maximum supply cannot be changed afterwards. '
-            'You become the owner and can emit up to the maximum.'),
+        content: Text(
+          'Ticker: ${draft.ticker}\nName: ${draft.fullName}\nDecimal places: ${draft.decimalPoint}\n'
+          'Maximum supply: ${fmt(draft.totalMaxSupply)}\nInitial supply (sent to you): ${fmt(draft.initialSupply)}\n\n'
+          'Network fee: ${defaultFee.format()} PDC.\n'
+          'The ticker, name, decimals and maximum supply cannot be changed afterwards. '
+          'You become the owner and can emit up to the maximum.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Deploy')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Deploy'),
+          ),
         ],
       ),
     );
@@ -233,9 +321,16 @@ class _DeployAssetPageState extends State<DeployAssetPage> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Asset submitted'),
-          content: SelectableText('Asset id:\n${r.assetId.hex}\n\nTransaction:\n${r.txId}\n\n'
-              'The asset exists once the transaction is confirmed.'),
-          actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done'))],
+          content: SelectableText(
+            'Asset id:\n${r.assetId.hex}\n\nTransaction:\n${r.txId}\n\n'
+            'The asset exists once the transaction is confirmed.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Done'),
+            ),
+          ],
         ),
       );
       if (mounted) Navigator.of(context).pop();
@@ -259,34 +354,64 @@ class _DeployAssetPageState extends State<DeployAssetPage> {
                 children: [
                   TextField(
                     controller: _ticker,
-                    decoration: const InputDecoration(labelText: 'Ticker', helperText: '1-14 letters or digits, e.g. GOLD'),
+                    decoration: const InputDecoration(
+                      labelText: 'Ticker',
+                      helperText: '1-14 letters or digits, e.g. GOLD',
+                    ),
                   ),
                   const SizedBox(height: 12),
-                  TextField(controller: _name, decoration: const InputDecoration(labelText: 'Full name')),
+                  TextField(
+                    controller: _name,
+                    decoration: const InputDecoration(labelText: 'Full name'),
+                  ),
                   const SizedBox(height: 12),
-                  TextField(controller: _meta, decoration: const InputDecoration(labelText: 'Description (optional)')),
+                  TextField(
+                    controller: _meta,
+                    decoration: const InputDecoration(
+                      labelText: 'Description (optional)',
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _decimals,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Decimal places', helperText: '0-18 (PDC itself uses 12)'),
+                    decoration: const InputDecoration(
+                      labelText: 'Decimal places',
+                      helperText: '0-18 (PDC itself uses 12)',
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _max,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Maximum supply', helperText: 'Fixed forever once deployed'),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Maximum supply',
+                      helperText: 'Fixed forever once deployed',
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _initial,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Initial supply', helperText: 'Created now and sent to your address; you can emit the rest later'),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Initial supply',
+                      helperText:
+                          'Created now and sent to your address; you can emit the rest later',
+                    ),
                   ),
                   for (final p in _problems)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
-                      child: Text(p, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                      child: Text(
+                        p,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
                     ),
                   const SizedBox(height: 20),
                   ListenableBuilder(

@@ -94,16 +94,41 @@ void main() {
     expect(gold.formatUnlocked(), '7.5');
   });
 
-  testWidgets('plain http to a remote host is refused on the welcome screen', (tester) async {
+  testWidgets('plain http to a remote host is allowed, with a visible warning', (tester) async {
     await _bigScreen(tester);
     final controller = WalletController(MockWalletCore(), isDemoEngine: true);
     await tester.pumpWidget(PdcWalletApp(controller: controller));
     await tester.enterText(find.widgetWithText(TextField, 'Node address'), 'http://node.example.org:19211');
+    await tester.pump();
+    expect(find.textContaining('not encrypted'), findsOneWidget);
     await tester.enterText(find.widgetWithText(TextField, 'Password'), 'correct horse');
     await tester.enterText(find.widgetWithText(TextField, 'Repeat password'), 'correct horse');
     await tester.tap(find.text('Create wallet'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('https://'), findsWidgets);
-    expect(controller.isOpen, isFalse);
+    // the recovery phrase dialog appears: the wallet was created against the http node
+    expect(find.text('Write down your recovery phrase'), findsOneWidget);
+    expect(controller.node.url, 'http://node.example.org:19211');
+  });
+
+  testWidgets('no warning for loopback or for https on the demo engine', (tester) async {
+    await _bigScreen(tester);
+    final controller = WalletController(MockWalletCore(), isDemoEngine: true);
+    await tester.pumpWidget(PdcWalletApp(controller: controller));
+    await tester.enterText(find.widgetWithText(TextField, 'Node address'), 'http://127.0.0.1:19211');
+    await tester.pump();
+    expect(find.textContaining('not encrypted'), findsNothing);
+    await tester.enterText(find.widgetWithText(TextField, 'Node address'), 'https://node.example.org');
+    await tester.pump();
+    expect(find.textContaining('not encrypted'), findsNothing);
+    expect(find.textContaining('does not encrypt'), findsNothing);
+  });
+
+  testWidgets('https with the real engine says the engine does not encrypt yet', (tester) async {
+    await _bigScreen(tester);
+    final controller = WalletController(MockWalletCore(), isDemoEngine: false);
+    await tester.pumpWidget(PdcWalletApp(controller: controller));
+    await tester.enterText(find.widgetWithText(TextField, 'Node address'), 'https://node.example.org');
+    await tester.pump();
+    expect(find.textContaining('does not encrypt the node connection'), findsOneWidget);
   });
 }

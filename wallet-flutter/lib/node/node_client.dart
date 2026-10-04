@@ -27,7 +27,8 @@ class NodeInfo {
   final bool synchronized;
 
   /// True when the node is online (daemon_network_state_online) or at least as high as the highest height it has seen.
-  bool get isUsable => synchronized || (targetHeight > 0 && targetHeight <= height);
+  bool get isUsable =>
+      synchronized || (targetHeight > 0 && targetHeight <= height);
 }
 
 class AssetInfo {
@@ -60,12 +61,16 @@ class NodeException implements Exception {
   final int? httpStatus;
   final int? rpcCode;
   @override
-  String toString() => 'NodeException($message${httpStatus == null ? '' : ', HTTP $httpStatus'})';
+  String toString() =>
+      'NodeException($message${httpStatus == null ? '' : ', HTTP $httpStatus'})';
 }
 
 class NodeClient {
-  NodeClient(this.endpoint, {http.Client? client, this.timeout = const Duration(seconds: 20)})
-      : _http = client ?? http.Client();
+  NodeClient(
+    this.endpoint, {
+    http.Client? client,
+    this.timeout = const Duration(seconds: 20),
+  }) : _http = client ?? http.Client();
 
   final NodeEndpoint endpoint;
   final Duration timeout;
@@ -74,26 +79,49 @@ class NodeClient {
 
   void close() => _http.close();
 
-  Uri _uri(String path) => endpoint.uri.replace(path: '${endpoint.uri.path.replaceAll(RegExp(r'/+$'), '')}$path');
+  Uri _uri(String path) => endpoint.uri.replace(
+    path: '${endpoint.uri.path.replaceAll(RegExp(r'/+$'), '')}$path',
+  );
 
-  Future<Map<String, Object?>> _rpc(String method, [Map<String, Object?> params = const {}]) async {
-    final body = encodeJsonExact({'jsonrpc': '2.0', 'id': _nextId++, 'method': method, 'params': params});
+  Future<Map<String, Object?>> _rpc(
+    String method, [
+    Map<String, Object?> params = const {},
+  ]) async {
+    final body = encodeJsonExact({
+      'jsonrpc': '2.0',
+      'id': _nextId++,
+      'method': method,
+      'params': params,
+    });
     final http.Response res;
     try {
       res = await _http
-          .post(_uri('/json_rpc'), headers: {'Content-Type': 'application/json'}, body: body)
+          .post(
+            _uri('/json_rpc'),
+            headers: {'Content-Type': 'application/json'},
+            body: body,
+          )
           .timeout(timeout);
     } on Exception catch (e) {
       throw NodeException('node unreachable: $e');
     }
     if (res.statusCode == 429) {
-      throw NodeException('node is rate limiting this client, try again shortly', httpStatus: 429);
+      throw NodeException(
+        'node is rate limiting this client, try again shortly',
+        httpStatus: 429,
+      );
     }
     if (res.statusCode == 403) {
-      throw NodeException('node refused $method (not available on this node)', httpStatus: 403);
+      throw NodeException(
+        'node refused $method (not available on this node)',
+        httpStatus: 403,
+      );
     }
     if (res.statusCode != 200) {
-      throw NodeException('unexpected response from node', httpStatus: res.statusCode);
+      throw NodeException(
+        'unexpected response from node',
+        httpStatus: res.statusCode,
+      );
     }
     final Object? decoded;
     try {
@@ -101,14 +129,21 @@ class NodeClient {
     } on JsonExactException catch (e) {
       throw NodeException('node sent invalid JSON: ${e.message}');
     }
-    if (decoded is! Map<String, Object?>) throw NodeException('node sent an unexpected reply');
+    if (decoded is! Map<String, Object?>) {
+      throw NodeException('node sent an unexpected reply');
+    }
     final err = decoded['error'];
     if (err is Map) {
       final code = err['code'];
-      throw NodeException('$method failed: ${err['message']}', rpcCode: code is int ? code : null);
+      throw NodeException(
+        '$method failed: ${err['message']}',
+        rpcCode: code is int ? code : null,
+      );
     }
     final result = decoded['result'];
-    if (result is! Map<String, Object?>) throw NodeException('$method returned no result');
+    if (result is! Map<String, Object?>) {
+      throw NodeException('$method returned no result');
+    }
     return result;
   }
 
@@ -123,8 +158,12 @@ class NodeClient {
     return NodeInfo(
       height: height,
       targetHeight: seen > height ? seen : height,
-      defaultFee: Amount.fromAtomic(asBigInt(r['default_fee']) ?? defaultFee.atomic),
-      minimumFee: Amount.fromAtomic(asBigInt(r['minimum_fee']) ?? defaultFee.atomic),
+      defaultFee: Amount.fromAtomic(
+        asBigInt(r['default_fee']) ?? defaultFee.atomic,
+      ),
+      minimumFee: Amount.fromAtomic(
+        asBigInt(r['minimum_fee']) ?? defaultFee.atomic,
+      ),
       synchronized: _int(r['daemon_network_state']) == _stateOnline,
     );
   }
@@ -157,16 +196,16 @@ class NodeClient {
   }
 
   AssetInfo _assetFrom(AssetId id, Map<String, Object?> d) => AssetInfo(
-        assetId: id,
-        ticker: (d['ticker'] as String?) ?? '',
-        fullName: (d['full_name'] as String?) ?? '',
-        metaInfo: (d['meta_info'] as String?) ?? '',
-        decimalPoint: _int(d['decimal_point']),
-        totalMaxSupply: asBigInt(d['total_max_supply']) ?? BigInt.zero,
-        currentSupply: asBigInt(d['current_supply']) ?? BigInt.zero,
-        hiddenSupply: d['hidden_supply'] == true,
-        owner: (d['owner'] as String?) ?? '',
-      );
+    assetId: id,
+    ticker: (d['ticker'] as String?) ?? '',
+    fullName: (d['full_name'] as String?) ?? '',
+    metaInfo: (d['meta_info'] as String?) ?? '',
+    decimalPoint: _int(d['decimal_point']),
+    totalMaxSupply: asBigInt(d['total_max_supply']) ?? BigInt.zero,
+    currentSupply: asBigInt(d['current_supply']) ?? BigInt.zero,
+    hiddenSupply: d['hidden_supply'] == true,
+    owner: (d['owner'] as String?) ?? '',
+  );
 
   static const String _ok = 'OK';
   static const String _notFound = 'NOT_FOUND';
@@ -174,7 +213,9 @@ class NodeClient {
   /// Daemon replies carry a status string next to the payload; anything but OK is a failure.
   void _requireOk(Map<String, Object?> r, String method) {
     final status = r['status'];
-    if (status != _ok) throw NodeException('$method failed: ${status ?? 'no status'}');
+    if (status != _ok) {
+      throw NodeException('$method failed: ${status ?? 'no status'}');
+    }
   }
 
   static int _int(Object? v) {

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'app/app_settings.dart';
 import 'app/wallet_controller.dart';
 import 'ui/home_page.dart';
+import 'ui/theme.dart';
 import 'ui/welcome_page.dart';
 import 'wallet/engine_choice.dart';
 import 'wallet/engine_factory.dart';
@@ -94,19 +95,14 @@ class _PdcWalletAppState extends State<PdcWalletApp> {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF3B2F8F);
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) => MaterialApp(
         title: 'PDC Wallet',
         themeMode: controller.themeMode,
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(colorSchemeSeed: seed, useMaterial3: true),
-        darkTheme: ThemeData(
-          colorSchemeSeed: seed,
-          brightness: Brightness.dark,
-          useMaterial3: true,
-        ),
+        theme: PdcTheme.light(),
+        darkTheme: PdcTheme.dark(),
         home: ListenableBuilder(
           listenable: controller,
           builder: (context, _) => controller.isOpen

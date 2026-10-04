@@ -13,17 +13,24 @@ import 'app_settings.dart';
 class WalletController extends ChangeNotifier {
   /// [pollInterval] is how often balances, history and sync state are re-read while a wallet is open; null turns
   /// polling off (tests drive [refresh] by hand).
-  WalletController(this.core, {NodeEndpoint? node, required this.isDemoEngine, this.pollInterval, AppSettings? settings})
-      : settings = settings ?? AppSettings.memory(),
-        node = node ?? _savedNode(settings) ?? NodeEndpoint('http://127.0.0.1:19211');
+  WalletController(
+    this.core, {
+    NodeEndpoint? node,
+    required this.isDemoEngine,
+    this.pollInterval,
+    AppSettings? settings,
+  }) : settings = settings ?? AppSettings.memory(),
+       node =
+           node ??
+           _savedNode(settings) ??
+           NodeEndpoint('http://127.0.0.1:19211');
 
-  /// The node saved by an earlier run, if it is still acceptable.
+  /// The node saved by an earlier run, if it still parses.
   static NodeEndpoint? _savedNode(AppSettings? s) {
     final url = s?.nodeUrl;
     if (url == null) return null;
     try {
-      final e = NodeEndpoint(url);
-      return e.isSecureEnough ? e : null;
+      return NodeEndpoint(url);
     } on FormatException {
       return null;
     }
@@ -94,26 +101,53 @@ class WalletController extends ChangeNotifier {
 
   /// Returns the recovery phrase; the caller must make the user write it down before continuing.
   Future<String> createWallet(String name, String password) => _guard(() async {
-        await core.connect(node);
-        final seed = await core.createWallet(name: name, password: password);
-        await _afterOpen();
-        await _remember(name);
-        return seed;
-      });
+    await core.connect(node);
+    final seed = await core.createWallet(name: name, password: password);
+    await _afterOpen();
+    await _remember(name);
+    return seed;
+  });
 
-  Future<void> restoreWallet(String name, String password, String seed, String seedPassword) => _guard(() async {
-        await core.connect(node);
-        await core.restoreWallet(name: name, password: password, seedPhrase: seed, seedPassword: seedPassword);
-        await _afterOpen();
-        await _remember(name);
-      });
+  Future<void> restoreWallet(
+    String name,
+    String password,
+    String seed,
+    String seedPassword,
+  ) => _guard(() async {
+    await core.connect(node);
+    await core.restoreWallet(
+      name: name,
+      password: password,
+      seedPhrase: seed,
+      seedPassword: seedPassword,
+    );
+    await _afterOpen();
+    await _remember(name);
+  });
+
+  Future<void> restoreWalletFromKeys(
+    String name,
+    String password,
+    String spendKey,
+    String viewKey,
+  ) => _guard(() async {
+    await core.connect(node);
+    await core.restoreWalletFromKeys(
+      name: name,
+      password: password,
+      spendKey: spendKey,
+      viewKey: viewKey,
+    );
+    await _afterOpen();
+    await _remember(name);
+  });
 
   Future<void> openWallet(String name, String password) => _guard(() async {
-        await core.connect(node);
-        await core.openWallet(name: name, password: password);
-        await _afterOpen();
-        await _remember(name);
-      });
+    await core.connect(node);
+    await core.openWallet(name: name, password: password);
+    await _afterOpen();
+    await _remember(name);
+  });
 
   /// Called when the application is about to exit.
   Future<void> shutdown() {
@@ -149,7 +183,8 @@ class WalletController extends ChangeNotifier {
       final snap = await _read();
       // The wallet may have been locked, or an action started, while the read was in flight.
       if (!isOpen || busy) return;
-      final changed = snap.progress != syncProgress ||
+      final changed =
+          snap.progress != syncProgress ||
           !listEquals(snap.balances, balances) ||
           !listEquals(snap.history, history) ||
           refreshError != null;
@@ -197,14 +232,19 @@ class WalletController extends ChangeNotifier {
 
   Future<void> _refresh() async => _apply(await _read());
 
-  Future<({double progress, List<AssetBalance> balances, List<WalletTx> history})> _read() async {
+  Future<
+    ({double progress, List<AssetBalance> balances, List<WalletTx> history})
+  >
+  _read() async {
     final progress = await core.syncProgress();
     final balances = await core.balances();
     final history = await core.history();
     return (progress: progress, balances: balances, history: history);
   }
 
-  void _apply(({double progress, List<AssetBalance> balances, List<WalletTx> history}) s) {
+  void _apply(
+    ({double progress, List<AssetBalance> balances, List<WalletTx> history}) s,
+  ) {
     syncProgress = s.progress;
     balances = s.balances;
     history = s.history;
@@ -212,34 +252,44 @@ class WalletController extends ChangeNotifier {
     lastUpdated = DateTime.now();
   }
 
-  Future<String> send(String to, Amount amount, AssetId asset, String comment) => _guard(() async {
-        final tx = await core.send(toAddress: to.trim(), amount: amount, asset: asset, comment: comment);
-        await _refresh();
-        return tx;
-      });
+  Future<String> send(
+    String to,
+    Amount amount,
+    AssetId asset,
+    String comment,
+  ) => _guard(() async {
+    final tx = await core.send(
+      toAddress: to.trim(),
+      amount: amount,
+      asset: asset,
+      comment: comment,
+    );
+    await _refresh();
+    return tx;
+  });
 
   Future<void> addCustomAsset(AssetId asset) => _guard(() async {
-        await core.addCustomAsset(asset);
-        await _refresh();
-      });
+    await core.addCustomAsset(asset);
+    await _refresh();
+  });
 
   Future<DeployedAsset> deployAsset(AssetDraft draft) => _guard(() async {
-        final r = await core.deployAsset(draft);
-        await _refresh();
-        return r;
-      });
+    final r = await core.deployAsset(draft);
+    await _refresh();
+    return r;
+  });
 
   Future<String> emitAsset(AssetId asset, Amount amount) => _guard(() async {
-        final tx = await core.emitAsset(asset: asset, amount: amount);
-        await _refresh();
-        return tx;
-      });
+    final tx = await core.emitAsset(asset: asset, amount: amount);
+    await _refresh();
+    return tx;
+  });
 
   Future<String> burnAsset(AssetId asset, Amount amount) => _guard(() async {
-        final tx = await core.burnAsset(asset: asset, amount: amount);
-        await _refresh();
-        return tx;
-      });
+    final tx = await core.burnAsset(asset: asset, amount: amount);
+    await _refresh();
+    return tx;
+  });
 
   AssetBalance? get nativeBalance {
     for (final b in balances) {

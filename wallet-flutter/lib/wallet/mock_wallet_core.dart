@@ -4,11 +4,12 @@
 
 import '../core/amount.dart';
 import '../core/asset_rules.dart';
+import '../core/secret_keys.dart';
 import 'wallet_core.dart';
 
 class MockWalletCore implements WalletCore {
   MockWalletCore({Amount? startingBalance})
-      : _native = startingBalance ?? Amount.parse('100');
+    : _native = startingBalance ?? Amount.parse('100');
 
   Amount _native;
   bool _open = false;
@@ -24,7 +25,10 @@ class MockWalletCore implements WalletCore {
   Future<void> connect(NodeEndpoint node) async => this.node = node;
 
   @override
-  Future<String> createWallet({required String name, required String password}) async {
+  Future<String> createWallet({
+    required String name,
+    required String password,
+  }) async {
     _open = true;
     return List.generate(26, (i) => 'mock${i + 1}').join(' ');
   }
@@ -44,7 +48,22 @@ class MockWalletCore implements WalletCore {
   }
 
   @override
-  Future<void> openWallet({required String name, required String password}) async => _open = true;
+  Future<void> restoreWalletFromKeys({
+    required String name,
+    required String password,
+    required String spendKey,
+    required String viewKey,
+  }) async {
+    normalizeSecretKey(spendKey, 'spend key');
+    normalizeSecretKey(viewKey, 'view key');
+    _open = true;
+  }
+
+  @override
+  Future<void> openWallet({
+    required String name,
+    required String password,
+  }) async => _open = true;
 
   @override
   Future<void> closeWallet() async => _open = false;
@@ -98,22 +117,32 @@ class MockWalletCore implements WalletCore {
   }
 
   void _payFee(Amount fee) {
-    if (_native < fee) throw WalletException('not enough PDC to pay the network fee');
+    if (_native < fee) {
+      throw WalletException('not enough PDC to pay the network fee');
+    }
     _native = _native - fee;
   }
 
-  String _record({required bool incoming, required Amount amount, required AssetId asset, required Amount fee, String comment = ''}) {
+  String _record({
+    required bool incoming,
+    required Amount amount,
+    required AssetId asset,
+    required Amount fee,
+    String comment = '',
+  }) {
     final hash = (++_txCounter).toRadixString(16).padLeft(64, '0');
-    _history.add(WalletTx(
-      txHash: hash,
-      height: 1000 + _txCounter,
-      timestamp: DateTime.now().toUtc(),
-      isIncoming: incoming,
-      amount: amount,
-      assetId: asset,
-      fee: fee,
-      comment: comment,
-    ));
+    _history.add(
+      WalletTx(
+        txHash: hash,
+        height: 1000 + _txCounter,
+        timestamp: DateTime.now().toUtc(),
+        isIncoming: incoming,
+        amount: amount,
+        assetId: asset,
+        fee: fee,
+        comment: comment,
+      ),
+    );
     return hash;
   }
 
@@ -127,18 +156,28 @@ class MockWalletCore implements WalletCore {
   }) async {
     _requireOpen();
     if (!toAddress.startsWith('Px')) throw WalletException('not a PDC address');
-    if (amount.isZero) throw WalletException('amount must be greater than zero');
+    if (amount.isZero) {
+      throw WalletException('amount must be greater than zero');
+    }
     final f = fee ?? defaultFee;
     if (asset.isNative) {
       if (_native < amount + f) throw WalletException('not enough PDC');
       _native = _native - amount;
     } else {
       final a = _assets[asset.hex];
-      if (a == null || a.held < amount.atomic) throw WalletException('not enough of this asset');
+      if (a == null || a.held < amount.atomic) {
+        throw WalletException('not enough of this asset');
+      }
       a.held -= amount.atomic;
     }
     _payFee(f);
-    return _record(incoming: false, amount: amount, asset: asset, fee: f, comment: comment);
+    return _record(
+      incoming: false,
+      amount: amount,
+      asset: asset,
+      fee: f,
+      comment: comment,
+    );
   }
 
   @override
@@ -154,32 +193,65 @@ class MockWalletCore implements WalletCore {
     if (problems.isNotEmpty) throw WalletException(problems.first);
     final id = AssetId(_fakeId(_assets.length + 1));
     _payFee(defaultFee);
-    _assets[id.hex] = _MockAsset(id, draft, draft.initialSupply, draft.initialSupply);
-    final tx = _record(incoming: true, amount: Amount.fromAtomic(draft.initialSupply), asset: id, fee: defaultFee, comment: 'asset registration');
+    _assets[id.hex] = _MockAsset(
+      id,
+      draft,
+      draft.initialSupply,
+      draft.initialSupply,
+    );
+    final tx = _record(
+      incoming: true,
+      amount: Amount.fromAtomic(draft.initialSupply),
+      asset: id,
+      fee: defaultFee,
+      comment: 'asset registration',
+    );
     return DeployedAsset(txId: tx, assetId: id);
   }
 
   @override
-  Future<String> emitAsset({required AssetId asset, required Amount amount}) async {
+  Future<String> emitAsset({
+    required AssetId asset,
+    required Amount amount,
+  }) async {
     _requireOpen();
     final a = _assets[asset.hex];
     if (a == null) throw WalletException('this wallet does not own that asset');
-    if (a.emitted + amount.atomic > a.draft.totalMaxSupply) throw WalletException('would exceed the maximum supply');
+    if (a.emitted + amount.atomic > a.draft.totalMaxSupply) {
+      throw WalletException('would exceed the maximum supply');
+    }
     _payFee(defaultFee);
     a.emitted += amount.atomic;
     a.held += amount.atomic;
-    return _record(incoming: true, amount: amount, asset: asset, fee: defaultFee, comment: 'asset emission');
+    return _record(
+      incoming: true,
+      amount: amount,
+      asset: asset,
+      fee: defaultFee,
+      comment: 'asset emission',
+    );
   }
 
   @override
-  Future<String> burnAsset({required AssetId asset, required Amount amount}) async {
+  Future<String> burnAsset({
+    required AssetId asset,
+    required Amount amount,
+  }) async {
     _requireOpen();
     final a = _assets[asset.hex];
-    if (a == null || a.held < amount.atomic) throw WalletException('not enough of this asset to burn');
+    if (a == null || a.held < amount.atomic) {
+      throw WalletException('not enough of this asset to burn');
+    }
     _payFee(defaultFee);
     a.held -= amount.atomic;
     a.emitted -= amount.atomic;
-    return _record(incoming: false, amount: amount, asset: asset, fee: defaultFee, comment: 'asset burn');
+    return _record(
+      incoming: false,
+      amount: amount,
+      asset: asset,
+      fee: defaultFee,
+      comment: 'asset burn',
+    );
   }
 
   static String _fakeId(int n) => 'a5${n.toRadixString(16).padLeft(62, '0')}';

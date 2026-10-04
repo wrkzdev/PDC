@@ -36,10 +36,13 @@ class _SettingsPageState extends State<SettingsPage> {
       final endpoint = NodeEndpoint(_node.text.trim());
       client = NodeClient(endpoint);
       final info = await client.getInfo();
-      final warn = endpoint.isSecureEnough ? '' : '\nWarning: this is plain http over the network; use https.';
+      final warn = endpoint.isSecureEnough
+          ? ''
+          : '\nWarning: this is plain http over the network; use https.';
       setState(() {
-        _statusIsError = !endpoint.isSecureEnough;
-        _status = 'Connected. Height ${info.height}${info.isUsable ? ', synchronized' : ', node is still syncing'}. '
+        _statusIsError = false;
+        _status =
+            'Connected. Height ${info.height}${info.isUsable ? ', synchronized' : ', node is still syncing'}. '
             'Network fee ${info.defaultFee.format()} PDC.$warn';
       });
     } catch (e) {
@@ -56,7 +59,6 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _apply() async {
     try {
       final endpoint = NodeEndpoint(_node.text.trim());
-      if (!endpoint.isSecureEnough) throw FormatException('Use an https:// node (plain http is only allowed for localhost).');
       await widget.controller.setNode(endpoint);
       if (mounted) {
         setState(() {
@@ -77,8 +79,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final c = widget.controller;
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    return PageList(
       children: [
         Text('Settings', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 12),
@@ -86,23 +87,39 @@ class _SettingsPageState extends State<SettingsPage> {
           controller: _node,
           decoration: const InputDecoration(
             labelText: 'Node address',
-            helperText: 'The node sees which blocks and outputs your wallet asks for. Prefer your own node.',
+            helperText:
+                'The node sees which blocks and outputs your wallet asks for. Prefer your own node.',
           ),
         ),
+        NodeAdvisory(field: _node, isDemoEngine: c.isDemoEngine),
         const SizedBox(height: 12),
         Row(
           children: [
-            OutlinedButton(onPressed: _checking ? null : _test, child: const Text('Test connection')),
+            OutlinedButton(
+              onPressed: _checking ? null : _test,
+              child: const Text('Test connection'),
+            ),
             const SizedBox(width: 12),
             FilledButton(onPressed: _apply, child: const Text('Use this node')),
           ],
         ),
         if (_status != null) ...[
           const SizedBox(height: 12),
-          Text(_status!, style: TextStyle(color: _statusIsError ? Theme.of(context).colorScheme.error : null)),
+          Text(
+            _status!,
+            style: TextStyle(
+              color: _statusIsError
+                  ? Theme.of(context).colorScheme.error
+                  : null,
+            ),
+          ),
         ],
         const SizedBox(height: 32),
-        OutlinedButton.icon(onPressed: c.lock, icon: const Icon(Icons.lock_outline), label: const Text('Lock wallet')),
+        OutlinedButton.icon(
+          onPressed: c.lock,
+          icon: const Icon(Icons.lock_outline),
+          label: const Text('Lock wallet'),
+        ),
       ],
     );
   }
