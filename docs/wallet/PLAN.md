@@ -65,7 +65,7 @@ pointed at it directly. `utils/docker/gateway` (built on this branch, 48 end-to-
 Open points:
 
 - **TLS.** `default_http_core_proxy` speaks plain HTTP only. HTTPS to a remote node therefore terminates at a reverse proxy
-  (the Caddy profile). The Flutter app refuses plain `http://` for anything but loopback.
+  (the Caddy profile). The Flutter app accepts both `http://` and `https://` and warns about plain http; note that the engine's node client ignores the scheme, so `https://` to a node without TLS in front still travels in the clear.
 - **Sync cost.** The node has no server-side scanning, view tags or compact blocks: a wallet downloads every block through
   `getblocks.bin` (up to 4000 per call) and trial-decrypts outputs. Fine on desktop, heavy in a browser. Mitigations that
   need no consensus change: restore height (`get_est_height_from_date`), a wallet-side checkpoint of the scan state, and
