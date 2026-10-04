@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app/wallet_controller.dart';
+import '../wallet/engine_errors.dart';
 import '../wallet/wallet_core.dart';
 import 'assets_page.dart';
 import 'common.dart';
@@ -68,13 +69,31 @@ class _WalletTab extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              if (c.syncProgress < 1) ...[
+              if (!c.isSynced) ...[
                 LinearProgressIndicator(value: c.syncProgress == 0 ? null : c.syncProgress),
                 const SizedBox(height: 4),
-                Text('Syncing ${(c.syncProgress * 100).toStringAsFixed(1)}% - balances may be incomplete',
-                    style: Theme.of(context).textTheme.bodySmall),
-                const SizedBox(height: 12),
               ],
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      c.isSynced ? 'Synchronized' : 'Syncing ${formatSyncPercent(c.syncProgress)}% - balances may be incomplete',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Refresh',
+                    onPressed: c.busy ? null : c.refresh,
+                    icon: const Icon(Icons.refresh),
+                  ),
+                ],
+              ),
+              if (c.refreshError != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text('Could not update: ${friendlyEngineError(c.refreshError!)}',
+                      style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                ),
               Text('Balances', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               for (final b in c.balances) _BalanceTile(balance: b),

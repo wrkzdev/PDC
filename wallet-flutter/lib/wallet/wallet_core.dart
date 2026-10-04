@@ -44,6 +44,19 @@ class AssetBalance {
 
   String formatTotal() => total.format(decimals: decimalPoint);
   String formatUnlocked() => unlocked.format(decimals: decimalPoint);
+
+  @override
+  bool operator ==(Object other) =>
+      other is AssetBalance &&
+      other.assetId == assetId &&
+      other.ticker == ticker &&
+      other.fullName == fullName &&
+      other.decimalPoint == decimalPoint &&
+      other.total == total &&
+      other.unlocked == unlocked;
+
+  @override
+  int get hashCode => Object.hash(assetId, ticker, fullName, decimalPoint, total, unlocked);
 }
 
 class WalletTx {
@@ -66,6 +79,21 @@ class WalletTx {
   final AssetId assetId;
   final Amount fee;
   final String comment;
+
+  @override
+  bool operator ==(Object other) =>
+      other is WalletTx &&
+      other.txHash == txHash &&
+      other.height == height &&
+      other.timestamp == timestamp &&
+      other.isIncoming == isIncoming &&
+      other.amount == amount &&
+      other.assetId == assetId &&
+      other.fee == fee &&
+      other.comment == comment;
+
+  @override
+  int get hashCode => Object.hash(txHash, height, timestamp, isIncoming, amount, assetId, fee, comment);
 }
 
 class DeployedAsset {

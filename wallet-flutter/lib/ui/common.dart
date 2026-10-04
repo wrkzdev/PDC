@@ -31,3 +31,10 @@ String describeError(Object e) {
   if (e is FormatException) return e.message;
   return e.toString();
 }
+
+/// Sync percentage that never rounds up to "100.0%" while the wallet is still behind: it is cut, not rounded, to 0.1%.
+String formatSyncPercent(double progress) {
+  final p = progress.isNaN ? 0.0 : progress.clamp(0.0, 1.0);
+  if (p >= 1) return '100';
+  return ((p * 1000).floor() / 10).toStringAsFixed(1);
+}

@@ -17,7 +17,9 @@ void main() {
     runApp(StartupErrorApp(message: e.toString()));
     return;
   }
-  runApp(PdcWalletApp(controller: WalletController(engine.core, isDemoEngine: engine.isDemo)));
+  runApp(PdcWalletApp(
+    controller: WalletController(engine.core, isDemoEngine: engine.isDemo, pollInterval: const Duration(seconds: 5)),
+  ));
 }
 
 class StartupErrorApp extends StatelessWidget {
@@ -59,14 +61,17 @@ class _PdcWalletAppState extends State<PdcWalletApp> {
     super.initState();
     // Stop the wallet engine before the process exits: on Windows an engine still running at exit can leave a process that
     // never ends. Failures must not keep the window from closing.
-    _lifecycle = AppLifecycleListener(onExitRequested: () async {
-      try {
-        await controller.shutdown().timeout(const Duration(seconds: 10));
-      } on Object {
-        // exit anyway
-      }
-      return AppExitResponse.exit;
-    });
+    _lifecycle = AppLifecycleListener(
+      onStateChange: (s) => controller.setForeground(s == AppLifecycleState.resumed || s == AppLifecycleState.inactive),
+      onExitRequested: () async {
+        try {
+          await controller.shutdown().timeout(const Duration(seconds: 10));
+        } on Object {
+          // exit anyway
+        }
+        return AppExitResponse.exit;
+      },
+    );
   }
 
   @override
