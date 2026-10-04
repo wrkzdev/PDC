@@ -44,11 +44,17 @@ class AssetsPage extends StatelessWidget {
                   title: Text('${a.formatUnlocked()} ${a.ticker}'),
                   subtitle: Text('${a.fullName}\n${a.assetId.hex}'),
                   isThreeLine: true,
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (v) => _manage(context, a, v),
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'emit', child: Text('Emit more (owner only)')),
-                      PopupMenuItem(value: 'burn', child: Text('Burn')),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CopyIconButton(text: a.assetId.hex, what: 'Asset id copied', tooltip: 'Copy asset id'),
+                      PopupMenuButton<String>(
+                        onSelected: (v) => _manage(context, a, v),
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(value: 'emit', child: Text('Emit more (owner only)')),
+                          PopupMenuItem(value: 'burn', child: Text('Burn')),
+                        ],
+                      ),
                     ],
                   ),
                 ),

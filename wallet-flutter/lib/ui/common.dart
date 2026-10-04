@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app/wallet_controller.dart';
 import '../wallet/engine_errors.dart';
@@ -37,4 +38,32 @@ String formatSyncPercent(double progress) {
   final p = progress.isNaN ? 0.0 : progress.clamp(0.0, 1.0);
   if (p >= 1) return '100';
   return ((p * 1000).floor() / 10).toStringAsFixed(1);
+}
+
+/// Copies [text] and confirms with a snackbar saying what was copied.
+Future<void> copyText(BuildContext context, String text, {String what = 'Copied'}) async {
+  await Clipboard.setData(ClipboardData(text: text));
+  if (context.mounted) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(what), duration: const Duration(seconds: 2)));
+  }
+}
+
+class CopyIconButton extends StatelessWidget {
+  const CopyIconButton({super.key, required this.text, required this.what, this.tooltip});
+
+  final String text;
+
+  /// Shown in the confirmation, e.g. "Address copied".
+  final String what;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+        icon: const Icon(Icons.copy_outlined),
+        tooltip: tooltip ?? 'Copy',
+        visualDensity: VisualDensity.compact,
+        onPressed: () => copyText(context, text, what: what),
+      );
 }

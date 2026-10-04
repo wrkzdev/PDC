@@ -47,6 +47,15 @@ class _SendPageState extends State<SendPage> {
       if (!to.startsWith('Px')) throw FormatException('PDC addresses start with Px.');
       final amount = Amount.parse(_amount.text, decimals: b.decimalPoint);
       if (amount.isZero) throw FormatException('Enter an amount greater than zero.');
+      final need = _asset.isNative ? amount + defaultFee : amount;
+      if (need > b.unlocked) {
+        throw FormatException(_asset.isNative
+            ? 'Not enough PDC: you have ${b.formatUnlocked()} available and the ${defaultFee.format()} PDC network fee comes on top.'
+            : 'Not enough ${b.ticker}: you have ${b.formatUnlocked()} available.');
+      }
+      if (!_asset.isNative && !c.canPayFee) {
+        throw FormatException('You need at least ${defaultFee.format()} PDC unlocked to pay the network fee.');
+      }
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -64,10 +73,22 @@ class _SendPageState extends State<SendPage> {
       if (!mounted) return;
       _amount.clear();
       _comment.clear();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sent. Transaction ${tx.substring(0, 12)}...')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Sent. Transaction ${tx.substring(0, 12)}...'),
+        action: SnackBarAction(label: 'Copy id', onPressed: () => copyText(context, tx, what: 'Transaction id copied')),
+      ));
     } catch (e) {
       if (mounted) setState(() => _error = describeError(e));
     }
+  }
+
+  /// Everything spendable of the selected asset; for PDC the network fee is kept back.
+  void _fillMax() {
+    final b = _balanceOf(_asset);
+    if (b == null) return;
+    var max = b.unlocked;
+    if (_asset.isNative) max = max > defaultFee ? max - defaultFee : Amount.zero;
+    _amount.text = max.format(decimals: b.decimalPoint);
   }
 
   @override
@@ -95,7 +116,10 @@ class _SendPageState extends State<SendPage> {
           TextField(
             controller: _amount,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Amount'),
+            decoration: InputDecoration(
+              labelText: 'Amount',
+              suffixIcon: TextButton(onPressed: _fillMax, child: const Text('Max')),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(controller: _comment, decoration: const InputDecoration(labelText: 'Comment (optional, stored in your wallet)')),
