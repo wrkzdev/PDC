@@ -61,6 +61,13 @@ namespace currency
     bool restore_from_seed_phrase(const std::string& seed_phrase, const std::string& seed_password);
     bool restore_from_tracking_seed(const std::string& tracking_seed);
 
+    // Restores a spendable account from its secret keys, given as "keys:<spend secret hex>:<view secret hex>[:<creation unix time>]".
+    // The view key of a wallet made from a seed phrase is derived from its spend key, so it must match the derived one:
+    // a pair that does not belong together is refused rather than guessed at. The result is a standard (non-auditable)
+    // account without a seed phrase, so get_seed_phrase() returns an empty string for it.
+    bool restore_from_keys(const std::string& keys_string);
+    static bool is_keys_restore_string(const std::string& s);
+
     uint64_t get_createtime() const { return m_creation_timestamp; }
     void set_createtime(uint64_t val) { m_creation_timestamp = val; }
 

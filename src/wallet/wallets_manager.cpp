@@ -1280,7 +1280,12 @@ std::string wallets_manager::is_valid_brain_restore_data(const std::string& seed
 {
   
   currency::account_base acc;
-  if (!currency::account_base::is_seed_tracking(seed_phrase))
+  if (currency::account_base::is_keys_restore_string(seed_phrase))
+  {
+    if (acc.restore_from_keys(seed_phrase))
+      return API_RETURN_CODE_TRUE;
+  }
+  else if (!currency::account_base::is_seed_tracking(seed_phrase))
   {
     if (acc.restore_from_seed_phrase(seed_phrase, seed_password))
       return API_RETURN_CODE_TRUE;

@@ -3391,6 +3391,12 @@ void wallet2::restore(const std::wstring& path, const std::string& pass, const s
     WLT_THROW_IF_FALSE_WALLET_CMN_ERR_EX(r, "Could not load tracking wallet from a given seed: invalid tracking seed");
     m_watch_only = true;
   }
+  else if (currency::account_base::is_keys_restore_string(seed_or_tracking_seed))
+  {
+    r = m_account.restore_from_keys(seed_or_tracking_seed);
+    init_log_prefix();
+    THROW_IF_FALSE_WALLET_EX(r, error::wallet_wrong_seed_error, epee::string_encoding::convert_to_ansii(m_wallet_file));
+  }
   else
   {
     r = m_account.restore_from_seed_phrase(seed_or_tracking_seed, seed_password);

@@ -63,7 +63,16 @@ namespace tools
     {
       //restore_from_tracking_seed
       bool is_tracking = currency::account_base::is_seed_tracking(seed_phrase);
-      if (is_tracking)
+      if (currency::account_base::is_keys_restore_string(seed_phrase))
+      {
+        currency::account_base acc;
+        result.require_password = false;
+        result.hash_sum_matched = false;
+        result.syntax_correct = acc.restore_from_keys(seed_phrase);
+        if (result.syntax_correct)
+          result.address = acc.get_public_address_str();
+      }
+      else if (is_tracking)
       {
         currency::account_base acc;
         result.require_password = false;

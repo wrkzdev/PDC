@@ -245,7 +245,66 @@ namespace currency
   //-----------------------------------------------------------------
   bool account_base::is_seed_tracking(const std::string& seed_phrase)
   {
-    return seed_phrase.find(':') != std::string::npos;
+    return !is_keys_restore_string(seed_phrase) && seed_phrase.find(':') != std::string::npos;
+  }
+  //-----------------------------------------------------------------
+  bool account_base::is_keys_restore_string(const std::string& s)
+  {
+    static const char prefix[] = "keys:";
+    return s.compare(0, sizeof(prefix) - 1, prefix) == 0;
+  }
+  //-----------------------------------------------------------------
+  bool account_base::restore_from_keys(const std::string& keys_string)
+  {
+    set_null();
+    if (!is_keys_restore_string(keys_string))
+      return false;
+
+    std::vector<std::string> parts;
+    boost::split(parts, keys_string, [](char x){ return x == ':'; });
+    if (parts.size() != 3 && parts.size() != 4)
+      return false;
+
+    // never log or echo the key material in here
+    crypto::secret_key spend_sec = AUTO_VAL_INIT(spend_sec);
+    crypto::secret_key view_sec = AUTO_VAL_INIT(view_sec);
+    if (parts[1].size() != sizeof(spend_sec) * 2 || parts[2].size() != sizeof(view_sec) * 2)
+      return false;
+    if (!epee::string_tools::parse_tpod_from_hex_string(parts[1], spend_sec) || !epee::string_tools::parse_tpod_from_hex_string(parts[2], view_sec))
+      return false;
+    if (spend_sec == currency::null_skey)
+      return false;
+
+    crypto::public_key spend_pub = AUTO_VAL_INIT(spend_pub);
+    if (!crypto::secret_key_to_public_key(spend_sec, spend_pub)) // also rejects a non-canonical scalar
+      return false;
+
+    crypto::secret_key expected_view_sec = AUTO_VAL_INIT(expected_view_sec);
+    crypto::dependent_key(spend_sec, expected_view_sec);
+    if (!(view_sec == expected_view_sec))
+      return false;
+
+    crypto::public_key view_pub = AUTO_VAL_INIT(view_pub);
+    if (!crypto::secret_key_to_public_key(view_sec, view_pub))
+      return false;
+
+    uint64_t ts = 0;
+    if (parts.size() == 4)
+    {
+      int64_t t = 0;
+      if (!epee::string_tools::string_to_num_fast(parts[3], t) || t < WALLET_BRAIN_DATE_OFFSET)
+        return false;
+      ts = t;
+    }
+
+    m_keys.spend_secret_key = spend_sec;
+    m_keys.view_secret_key = view_sec;
+    m_keys.account_address.spend_public_key = spend_pub;
+    m_keys.account_address.view_public_key = view_pub;
+    m_keys.account_address.flags = 0;
+    m_creation_timestamp = ts;
+    m_keys_seed_binary.clear();
+    return true;
   }
   //-----------------------------------------------------------------
   bool account_base::is_seed_password_protected(const std::string& seed_phrase_, bool& is_password_protected)

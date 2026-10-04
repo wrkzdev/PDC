@@ -46,6 +46,83 @@ TEST(wallet_seed, store_restore_test)
 
 }
 
+TEST(wallet_seed, restore_from_keys)
+{
+  // keys of known seed phrases (see wallet_seed_entries below): restoring from the keys gives the same account
+  struct { const char* seed; const char* spend; const char* view; } vectors[] = {
+    { "dew dew dew dew dew dew dew dew dew dew dew dew dew dew dew dew dew dew dew dew dew dew dew dew god",
+      "5e051454d7226b5734ebd64f754b57db4c655ecda00bd324f1b241d0b6381c0f", "7dde5590fdf430568c00556ac2accf09da6cde9a29a4bc7d1cb6fd267130f006" },
+    { "conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation conversation",
+      "71162f207499bc16260957c36a6586bb931d54be33ff56b94d565dfedbb3c70e", "8454372096986c457f4e7dceef2f39b6050c35d87b31d9c9eb8d37bf8f1f430f" },
+  };
+  for (const auto& v : vectors)
+  {
+    currency::account_base from_seed;
+    ASSERT_TRUE(from_seed.restore_from_seed_phrase(v.seed, ""));
+
+    currency::account_base from_keys;
+    ASSERT_TRUE(from_keys.restore_from_keys(std::string("keys:") + v.spend + ":" + v.view));
+    ASSERT_EQ(0, memcmp(&from_keys.get_keys(), &from_seed.get_keys(), sizeof(currency::account_keys)));
+    ASSERT_EQ(from_seed.get_public_address_str(), from_keys.get_public_address_str());
+    ASSERT_FALSE(from_keys.is_auditable());
+    ASSERT_FALSE(from_keys.is_watch_only());
+    ASSERT_EQ("", from_keys.get_seed_phrase(""));
+
+    // with a creation time
+    currency::account_base dated;
+    ASSERT_TRUE(dated.restore_from_keys(std::string("keys:") + v.spend + ":" + v.view + ":1700000000"));
+    ASSERT_EQ(1700000000u, dated.get_createtime());
+    ASSERT_EQ(from_seed.get_public_address_str(), dated.get_public_address_str());
+  }
+
+  // a randomly generated account round-trips through its own keys
+  for (size_t i = 0; i != 20; i++)
+  {
+    currency::account_base acc;
+    acc.generate();
+    currency::account_base acc2;
+    ASSERT_TRUE(acc2.restore_from_keys("keys:" + epee::string_tools::pod_to_hex(acc.get_keys().spend_secret_key) + ":" + epee::string_tools::pod_to_hex(acc.get_keys().view_secret_key)));
+    ASSERT_EQ(acc.get_public_address_str(), acc2.get_public_address_str());
+  }
+}
+
+TEST(wallet_seed, restore_from_keys_rejects_bad_input)
+{
+  const std::string spend = "5e051454d7226b5734ebd64f754b57db4c655ecda00bd324f1b241d0b6381c0f";
+  const std::string view = "7dde5590fdf430568c00556ac2accf09da6cde9a29a4bc7d1cb6fd267130f006";
+  const std::string other_view = "8454372096986c457f4e7dceef2f39b6050c35d87b31d9c9eb8d37bf8f1f430f";
+  const std::string zeros(64, '0');
+  const std::string ff(64, 'f'); // not a canonical scalar
+
+  const std::string bad[] = {
+    "",
+    "keys:",
+    "keys:" + spend,                                  // view key missing
+    "keys:" + spend + ":" + other_view,               // view key of another wallet
+    "keys:" + view + ":" + spend,                     // swapped
+    "keys:" + zeros + ":" + zeros,                    // null keys
+    "keys:" + ff + ":" + ff,                          // out of range
+    "keys:" + spend.substr(1) + ":" + view,           // too short
+    "keys:" + spend + "00:" + view,                   // too long
+    "keys:" + spend + ":" + view.substr(0, 63) + "g", // not hex
+    "keys:" + spend + ":" + view + ":123",            // creation time before the wallet epoch
+    "keys:" + spend + ":" + view + ":abc",
+    "keys:" + spend + ":" + view + ":1700000000:1",
+    "KEYS:" + spend + ":" + view,                     // the prefix is case sensitive
+    spend + ":" + view,                               // without the prefix this is a (rejected) tracking seed
+  };
+  for (const auto& s : bad)
+  {
+    currency::account_base acc;
+    ASSERT_FALSE(acc.restore_from_keys(s)) << s;
+  }
+
+  ASSERT_TRUE(currency::account_base::is_keys_restore_string("keys:abc"));
+  ASSERT_FALSE(currency::account_base::is_keys_restore_string("Px123:abc"));
+  ASSERT_FALSE(currency::account_base::is_seed_tracking("keys:" + spend + ":" + view));
+  ASSERT_TRUE(currency::account_base::is_seed_tracking("Px123:abc"));
+}
+
 struct wallet_seed_entry
 {
   std::string seed_phrase;
