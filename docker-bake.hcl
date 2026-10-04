@@ -10,6 +10,7 @@
 # See docs/BUILDING.md for what each target contains and how far it has been verified.
 
 variable "TESTNET"    { default = "FALSE" }  # TRUE builds testnet binaries
+variable "UBUNTU_VERSION" { default = "22.04" }  # base image; use 20.04 for Linux binaries that run on older distributions (glibc 2.31)
 variable "PDC_ENGINE" { default = "demo" }   # Flutter apps: "demo" (fake balances) or "native" (bundled wallet library)
 variable "JOBS"       { default = "0" }      # 0 = size parallel jobs from the CPUs and free memory
 variable "DIST"       { default = "dist" }   # output folder
@@ -19,6 +20,7 @@ target "_common" {
   dockerfile = "utils/docker/Dockerfile"
   args = {
     TESTNET    = TESTNET
+    UBUNTU_VERSION = UBUNTU_VERSION
     PDC_ENGINE = PDC_ENGINE
     JOBS       = JOBS
   }

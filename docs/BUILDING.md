@@ -201,6 +201,12 @@ itself has been exercised on it.
 
 ## Troubleshooting
 
+- **`version 'GLIBC_2.34' not found` when running a Linux binary on another machine.** The binaries need at least the glibc of
+  the image they were built on (Ubuntu 22.04 = glibc 2.35, so they need 2.34). Build on an older base and they run on it and
+  anything newer: `docker build -f utils/docker/Dockerfile --build-arg UBUNTU_VERSION=20.04 --target artifacts -o dist/linux-amd64-ubuntu20 .`
+  (or `UBUNTU_VERSION=20.04 docker buildx bake linux-amd64`). Verified: the 20.04 build needs glibc 2.29 at most and runs on
+  Ubuntu 20.04 and 22.04; the 22.04 build fails on 20.04 with exactly that message. The wallet library and the Flutter Linux
+  app take the same argument but have not been built on 20.04 yet.
 - **Docker says "read-only file system", builds die with `exit code 134` or ccache errors.** The disk holding Docker's data is
   full. Docker Desktop on WSL2 keeps it in `docker_data.vhdx`; on this machine it grew past 14 GB on `C:`. Move it: quit
   Docker Desktop, `wsl --shutdown`, copy the `...\AppData\Local\Docker\wsl` folder to a bigger drive, set
